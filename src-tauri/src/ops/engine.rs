@@ -494,9 +494,36 @@ fn copy_one(src: &Path, dst: &Path, size: u64, progress: &dyn Progress) -> AppRe
 
 // --- Deleting ---------------------------------------------------------------
 
+/// Is this a link that stands in for a directory — a Windows junction
+/// or directory symlink? The scan deliberately treats those as leaves
+/// so a delete never walks into the target, but on Windows the link
+/// itself has `FILE_ATTRIBUTE_DIRECTORY`, so `DeleteFileW` refuses it
+/// with `ERROR_ACCESS_DENIED` and `RemoveDirectoryW` is what unlinks
+/// it (leaving the target untouched).
+fn is_directory_link(path: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        std::fs::symlink_metadata(path)
+            .map(|m| m.file_type().is_symlink_dir())
+            .unwrap_or(false)
+    }
+    #[cfg(not(windows))]
+    {
+        // Elsewhere `unlink` removes a symlink of any kind.
+        let _ = path;
+        false
+    }
+}
+
 /// Remove a file, clearing the read-only attribute if that is what
 /// blocked it — Explorer does the same rather than refusing.
 fn remove_file_forcing(path: &Path) -> AppResult<()> {
+    if is_directory_link(path) {
+        return std::fs::remove_dir(path)
+            .map_err(|e| AppError::Io(format!("Cannot delete {}: {}", path.display(), e)));
+    }
+
     match std::fs::remove_file(path) {
         Ok(()) => return Ok(()),
         Err(e) if e.kind() != std::io::ErrorKind::PermissionDenied => {
@@ -672,7 +699,10 @@ fn run_transfer(
 
 fn delete_source_quietly(plan: &SourcePlan) -> AppResult<()> {
     let src = plan.root.as_path();
-    let result = if plan.is_dir {
+    let result = if is_directory_link(src) {
+        // Unlink the junction, never its target.
+        std::fs::remove_dir(src)
+    } else if plan.is_dir {
         std::fs::remove_dir_all(src)
     } else {
         std::fs::remove_file(src)
@@ -943,6 +973,75 @@ mod tests {
 
         delete_source(&plan_for(&file), &Counter::default()).unwrap();
         assert!(!file.exists());
+    }
+
+    /// Create a junction with `mklink /J`; unlike a directory symlink
+    /// this needs no elevation, and it is what tools such as `npm`,
+    /// `conda` and deployment scripts leave behind.
+    #[cfg(windows)]
+    fn make_junction(link: &Path, target: &Path) -> bool {
+        std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+            && link.exists()
+    }
+
+    /// `DeleteFileW` refuses a junction with ERROR_ACCESS_DENIED; it has
+    /// to be unlinked with `RemoveDirectoryW`, and its target must not
+    /// be touched.
+    #[cfg(windows)]
+    #[test]
+    fn delete_unlinks_a_junction_without_following_it() {
+        let tmp = TempDir::new();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("keep.txt"), b"keep").unwrap();
+
+        let link = tmp.path().join("link");
+        if !make_junction(&link, &target) {
+            return;
+        }
+
+        let plan = plan_for(&link);
+        assert!(!plan.is_dir, "the scan must not walk into the target");
+
+        delete_source(&plan, &Counter::default()).unwrap();
+
+        assert!(!link.exists(), "the junction itself is gone");
+        assert_eq!(
+            std::fs::read(target.join("keep.txt")).unwrap(),
+            b"keep",
+            "the target survives"
+        );
+    }
+
+    /// The same junction, this time reached by deleting the folder that
+    /// contains it — the walk hands it to the file worker.
+    #[cfg(windows)]
+    #[test]
+    fn delete_of_a_tree_containing_a_junction_succeeds() {
+        let tmp = TempDir::new();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("keep.txt"), b"keep").unwrap();
+
+        let tree = tmp.path().join("tree");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(tree.join("a.txt"), b"aaaa").unwrap();
+        if !make_junction(&tree.join("link"), &target) {
+            return;
+        }
+
+        delete_source(&plan_for(&tree), &Counter::default()).unwrap();
+
+        assert!(!tree.exists());
+        assert_eq!(std::fs::read(target.join("keep.txt")).unwrap(), b"keep");
     }
 
     #[test]
