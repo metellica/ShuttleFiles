@@ -1,0 +1,57 @@
+[package]
+name = "shuttle-files"
+version = "0.1.0"
+edition = "2021"
+description = "ShuttleFiles - Lightweight local file browser"
+# The crate ships two binaries; `cargo run` (and `tauri dev`) must pick
+# the app, not the shell-menu helper.
+default-run = "shuttle-files"
+
+[lib]
+name = "shuttle_files_lib"
+# Desktop-only app: the staticlib/cdylib variants Tauri's mobile targets
+# need would only add a redundant DLL (and a linker warning) here.
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+dirs = "6"
+thiserror = "2"
+log = "0.4"
+env_logger = "0.11"
+uuid = { version = "1", features = ["v4"] }
+# Parallel directory walking for the scan phase of large trees.
+jwalk = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+# Mock runtime, so the IPC command surface can be exercised without a GUI.
+tauri = { version = "2", features = ["test"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = "s"

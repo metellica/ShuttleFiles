@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <!--
+    Integration-test binaries link tao/wry, which imports the v6-only
+    comctl32 entry points (SetWindowSubclass and friends). Without this
+    dependency the loader fails with STATUS_ENTRYPOINT_NOT_FOUND before
+    a single test runs. The app binary gets an equivalent manifest from
+    tauri-build; test binaries do not.
+  -->
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+</assembly>

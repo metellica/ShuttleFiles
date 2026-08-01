@@ -1,0 +1,8 @@
+参考 @D:\workspace\ShuttleSFTP\ 的技术栈和UI风格，实现一个轻量级的本地文件流量器，要求：2
+1. 支持多tab2
+2. 支持收藏和fast dial2
+3. 地址栏支持copy，paste，editor2
+4. 支持打开远程共享文件夹2
+5. 支持tab之间/和本地浏览器之间的copy 和 paste2
+6. 优化大文件夹的copy/delete效率2
+7. 右键支持同步系统浏览器的第三方应用注册的功能，比如7zip的相关菜单（这个是否能支持）

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+# Staged at build time by scripts/stage-helper.mjs
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep

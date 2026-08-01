@@ -1,0 +1,63 @@
+<!--
+  ShuttleFiles app icon.
+
+  Keeps the Shuttle family's shape language (squircle tile, single white
+  glyph) so it sits next to ShuttleSFTP, but swaps the indigo tile for a
+  sky-to-blue one and the free-standing shuttle for a folder — the two
+  apps have to be tellable apart at 16 px in a taskbar.
+
+  The shuttle survives as a knockout inside the folder: at small sizes
+  the folder silhouette carries the meaning, at large sizes the family
+  mark shows through. The knockout reuses the tile gradient in user
+  space, so it lines up exactly with the background behind it.
+
+  Proportions are driven by the 16-32 px case: a tall folder tab (100 u,
+  ~3 px at 32) so the step is still visible, a chunky shuttle that does
+  not wash out, and a deep enough gradient for the white to stay crisp
+  against the tile.
+-->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tile" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1024">
+      <stop offset="0" stop-color="#5ec9ea" />
+      <stop offset="0.5" stop-color="#3184d6" />
+      <stop offset="1" stop-color="#1d55ad" />
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="232" ry="232" fill="url(#tile)" />
+
+  <!-- Folder: tab on the left, 100 u taller than the body's top edge -->
+  <path
+    fill="#ffffff"
+    d="M 236 268
+       H 424
+       L 486 368
+       H 788
+       A 60 60 0 0 1 848 428
+       V 696
+       A 60 60 0 0 1 788 756
+       H 236
+       A 60 60 0 0 1 176 696
+       V 328
+       A 60 60 0 0 1 236 268
+       Z" />
+
+  <!-- Shuttle, knocked out of the folder -->
+  <path
+    fill="url(#tile)"
+    d="M 512 404
+       C 553 458 574 528 578 606
+       L 650 670
+       L 650 708
+       L 566 682
+       L 556 716
+       L 512 730
+       L 468 716
+       L 458 682
+       L 374 708
+       L 374 670
+       L 446 606
+       C 450 528 471 458 512 404
+       Z" />
+</svg>
