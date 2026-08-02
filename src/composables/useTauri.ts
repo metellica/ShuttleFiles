@@ -4,6 +4,7 @@ import type {
   DriveInfo,
   Favorite,
   HashAlgo,
+  OpenWithSettings,
   PlaceEntry,
   RecentEntry,
   SearchResult,
@@ -99,6 +100,14 @@ export const loadViewSettings = () => invoke<ViewSettings>('load_view_settings')
 
 export const saveViewSettings = (settings: ViewSettings) =>
   invoke<void>('save_view_settings', { settings })
+
+export const loadOpenWith = () => invoke<OpenWithSettings>('load_open_with')
+
+/** Resolves with the normalised settings; rejects if the program is missing. */
+export const saveOpenWith = (settings: OpenWithSettings) =>
+  invoke<OpenWithSettings>('save_open_with', { settings })
+
+export const defaultOpenWith = () => invoke<OpenWithSettings>('default_open_with')
 
 // --- Fuzzy search ------------------------------------------------------------
 

@@ -36,6 +36,10 @@ work. Remaining: remote shares (R4).
 - ✂️ **File operations** — Rename, Delete (with confirmation), New Folder,
   collision-safe `name (2)` destinations, same-volume moves via rename
 - 🖱 **System integration** — open files with their default app, Show in Explorer
+- 📝 **Editor for text files** — pick one program in ⚙ Settings and every text
+  extension opens with it, on double click and from the context menu, without
+  touching Windows' per-extension associations; the extension list is editable
+  and "Open with System Default" stays one click away
 - 🧩 **Third-party context menus** — "More options" opens the real Windows shell
   menu, so 7-Zip, WinMerge, TortoiseGit, PowerToys and everything else you have
   installed work exactly as they do in Explorer; hosted out of process
@@ -255,6 +259,9 @@ Plain JSON under `~/.config/shuttle-files/`, matching the ShuttleSFTP convention
 |------|----------|
 | `favorites.json` | Starred folders shown on the fast dial |
 | `recent.json` | Visit history (capped at 200) driving "Frequent" |
+| `tabs.json` | Open tabs, restored on the next start |
+| `view.json` | Row size |
+| `open-with.json` | Program used for text files, and which extensions count as text |
 
 ## License
 

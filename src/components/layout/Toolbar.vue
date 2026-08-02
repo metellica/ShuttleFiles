@@ -24,6 +24,7 @@ const emit = defineEmits<{
   navigate: [path: string]
   'new-folder': []
   'toggle-favorite': []
+  settings: []
   'update:filter': [value: string]
   'update:recursive': [value: boolean]
 }>()
@@ -103,6 +104,7 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
       ＋
     </button>
     <DensityControl />
+    <button class="nav-btn" title="Settings" @click="emit('settings')">⚙</button>
   </div>
 </template>
 

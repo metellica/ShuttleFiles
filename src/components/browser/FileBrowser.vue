@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { confirm } from '@tauri-apps/plugin-dialog'
+import { confirm, message } from '@tauri-apps/plugin-dialog'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import type { FileEntry, HashAlgo } from '@/types/filesystem'
 import { ROOT } from '@/types/filesystem'
@@ -10,6 +10,7 @@ import { useFuzzySearch } from '@/composables/useFuzzySearch'
 import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { usePlacesStore } from '@/stores/places'
+import { useOpenWithStore } from '@/stores/openWith'
 import ContextMenu, { type MenuItem } from '@/components/common/ContextMenu.vue'
 import HashDialog from '@/components/common/HashDialog.vue'
 import FastDial from '@/components/browser/FastDial.vue'
@@ -26,6 +27,7 @@ const emit = defineEmits<{
 const clipboard = useClipboardStore()
 const ops = useOperationsStore()
 const places = usePlacesStore()
+const openWith = useOpenWithStore()
 const search = useFuzzySearch()
 
 const entries = ref<FileEntry[]>([])
@@ -102,8 +104,26 @@ function open(entry: FileEntry) {
   if (entry.isDir) {
     emit('navigate', entry.path)
   } else {
-    openPath(entry.path).catch((e) => console.error('Cannot open file:', e))
+    // Text files go to the configured editor, everything else to the
+    // system default; see the open-with store.
+    reportOpenFailure(openWith.openEntry(entry), entry)
   }
+}
+
+/** Escape hatch for a file the configured editor is the wrong tool for. */
+function openWithSystemDefault(entry: FileEntry) {
+  reportOpenFailure(openPath(entry.path), entry)
+}
+
+/**
+ * A failed open used to only reach the console, which made a misconfigured
+ * editor or a missing association look like a dead menu entry.
+ */
+function reportOpenFailure(attempt: Promise<void>, entry: FileEntry) {
+  attempt.catch((e) => {
+    console.error('Cannot open file:', e)
+    message(String(e), { title: `Cannot open ${entry.name}`, kind: 'error' }).catch(() => {})
+  })
 }
 
 function selectedEntries(): FileEntry[] {
@@ -259,6 +279,15 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   const items: MenuItem[] = entry
     ? [
         { label: 'Open', icon: '↩', action: () => open(entry) },
+        ...(openWith.programFor(entry)
+          ? [
+              {
+                label: 'Open with System Default',
+                icon: '🖥',
+                action: () => openWithSystemDefault(entry),
+              },
+            ]
+          : []),
         ...(entry.isDir || searchMode.value
           ? [
               {

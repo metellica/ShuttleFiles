@@ -6,6 +6,7 @@ import { usePlacesStore } from '@/stores/places'
 import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { useViewSettingsStore } from '@/stores/viewSettings'
+import { useOpenWithStore } from '@/stores/openWith'
 import { parentPath } from '@/composables/useTauri'
 import { ROOT } from '@/types/filesystem'
 import TabBar from '@/components/layout/TabBar.vue'
@@ -13,12 +14,14 @@ import Toolbar from '@/components/layout/Toolbar.vue'
 import OperationBar from '@/components/layout/OperationBar.vue'
 import FileBrowser from '@/components/browser/FileBrowser.vue'
 import PromptDialog from '@/components/common/PromptDialog.vue'
+import SettingsDialog from '@/components/common/SettingsDialog.vue'
 
 const tabs = useTabsStore()
 const places = usePlacesStore()
 const clipboard = useClipboardStore()
 const ops = useOperationsStore()
 const view = useViewSettingsStore()
+const openWith = useOpenWithStore()
 
 let unlistenOps: UnlistenFn | null = null
 
@@ -26,6 +29,7 @@ const stats = ref({ total: 0, selected: 0, searching: false, truncated: false })
 const upTarget = ref<string | null>(null)
 const browserRef = ref<InstanceType<typeof FileBrowser> | null>(null)
 const toolbarRef = ref<InstanceType<typeof Toolbar> | null>(null)
+const settingsOpen = ref(false)
 
 const currentPath = computed(() => tabs.activeTab?.path ?? ROOT)
 
@@ -179,6 +183,7 @@ onMounted(async () => {
   await Promise.all([
     tabs.restore().catch((e) => console.error('Cannot restore tabs:', e)),
     view.restore(),
+    openWith.restore(),
   ])
   places.refresh().catch((e) => console.error('Cannot load places:', e))
   clipboard.refresh()
@@ -222,6 +227,7 @@ onUnmounted(() => {
       @navigate="navigate"
       @new-folder="browserRef?.newFolder()"
       @toggle-favorite="toggleFavorite"
+      @settings="settingsOpen = true"
       @update:filter="filter = $event"
       @update:recursive="recursive = $event"
     />
@@ -255,6 +261,7 @@ onUnmounted(() => {
     </footer>
 
     <PromptDialog />
+    <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>
 

@@ -64,6 +64,14 @@ export interface ViewSettings {
   rowScale: number
 }
 
+/** Persisted shape of `~/.config/shuttle-files/open-with.json`. */
+export interface OpenWithSettings {
+  /** Program that opens text files; empty means the system default. */
+  textEditor: string
+  /** Lowercase extensions, without the leading dot. */
+  textExtensions: string[]
+}
+
 /**
  * A fuzzy-search match. The entry's fields are flattened in, so a hit can
  * be rendered by the file list without unwrapping.
