@@ -1,0 +1,73 @@
+name: Build & Release
+
+# Tag a release to publish installers; run by hand to get a build to
+# download from the Actions tab.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Windows only, unlike ShuttleSFTP: the browser is built on Win32
+    # shell integration — `CF_HDROP` clipboard interop, `IContextMenu`
+    # extensions through the out-of-process `shellmenu` helper, drive
+    # enumeration for "This PC" and junction-aware copies.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Restores target/ between runs; a cold Tauri build is minutes of
+      # dependency compilation.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Type-check the frontend
+        run: npm run type-check
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      # `beforeBuildCommand` builds the frontend and stages
+      # `shellmenu.exe` into src-tauri/binaries/, which the bundle
+      # declares as a resource. No `--target` is passed, so that helper
+      # build and this one share target/release and compile the
+      # dependency graph once.
+      - name: Build the app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: npx tauri
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: ${{ startsWith(github.ref, 'refs/tags/') && format('ShuttleFiles {0}', github.ref_name) || '' }}
+          releaseDraft: false
+          prerelease: false
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shuttle-files-windows-x64
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi

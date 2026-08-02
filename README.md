@@ -90,6 +90,23 @@ npx tauri dev
 npx tauri build
 ```
 
+Produces an MSI and an NSIS installer under
+`src-tauri/target/release/bundle/`.
+
+### Releases
+
+`.github/workflows/build.yml` builds on Windows, runs the type-check and the
+Rust tests, and bundles both installers. Pushing a `v*` tag publishes them as a
+GitHub Release; a manual run (Actions → Build & Release → Run workflow) leaves
+them as a downloadable artifact instead.
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The workflow is Windows-only by design: the browser is built on Win32 shell
+integration that has no equivalent elsewhere.
+
 ### Checks
 
 ```bash
