@@ -51,3 +51,15 @@ export interface RecentEntry {
 
 /** The virtual root ("This PC"), which renders as the fast dial. */
 export const ROOT = ''
+
+/** Persisted shape of a tab in `~/.config/shuttle-files/tabs.json`. */
+export interface TabSnapshot {
+  path: string
+  lock: 'none' | 'locked' | 'locked-allow-dirs'
+  lockedPath: string
+}
+
+/** Persisted shape of `~/.config/shuttle-files/view.json`. */
+export interface ViewSettings {
+  rowScale: number
+}

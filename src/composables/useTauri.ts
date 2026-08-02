@@ -5,6 +5,8 @@ import type {
   Favorite,
   PlaceEntry,
   RecentEntry,
+  TabSnapshot,
+  ViewSettings,
 } from '@/types/filesystem'
 import type {
   ClipboardFiles,
@@ -84,3 +86,14 @@ export const listRecent = () => invoke<RecentEntry[]>('list_recent')
 export const recordVisit = (path: string) => invoke<void>('record_visit', { path })
 
 export const clearRecent = () => invoke<void>('clear_recent')
+
+// --- Persisted UI state (~/.config/shuttle-files/) ---------------------------
+
+export const loadTabs = () => invoke<TabSnapshot[]>('load_tabs')
+
+export const saveTabs = (tabs: TabSnapshot[]) => invoke<void>('save_tabs', { tabs })
+
+export const loadViewSettings = () => invoke<ViewSettings>('load_view_settings')
+
+export const saveViewSettings = (settings: ViewSettings) =>
+  invoke<void>('save_view_settings', { settings })

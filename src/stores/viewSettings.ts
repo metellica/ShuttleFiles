@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
+import { loadViewSettings, saveViewSettings } from '@/composables/useTauri'
 
 /**
  * Row scale for the file list.
@@ -24,28 +25,56 @@ export const ROW_PRESETS: RowPreset[] = [
   { id: 'large', label: 'Large', scale: 1.4 },
 ]
 
-const STORAGE_KEY = 'shuttle-files:view'
+/** Legacy localStorage key, read once so existing users keep their zoom. */
+const LEGACY_STORAGE_KEY = 'shuttle-files:view'
 
 function clamp(value: number): number {
   return Math.min(MAX_ROW_SCALE, Math.max(MIN_ROW_SCALE, value))
 }
 
-function load(): number {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) return 1
+/** Row scale saved by an older build that used the WebView's localStorage. */
+function takeLegacyScale(): number | null {
   try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (!raw) return null
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
     const parsed = JSON.parse(raw) as { rowScale?: unknown }
-    return typeof parsed.rowScale === 'number' ? clamp(parsed.rowScale) : 1
+    return typeof parsed.rowScale === 'number' ? clamp(parsed.rowScale) : null
   } catch {
-    return 1
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+    return null
   }
 }
 
 export const useViewSettingsStore = defineStore('viewSettings', () => {
-  const rowScale = ref(load())
+  const rowScale = ref(1)
+  // Saving before the stored value has arrived would overwrite it with the default.
+  let loaded = false
+
+  async function restore() {
+    try {
+      const legacy = takeLegacyScale()
+      if (legacy !== null) {
+        rowScale.value = legacy
+        loaded = true
+        // Writing back turns a migrated localStorage value into view.json.
+        await saveViewSettings({ rowScale: legacy })
+        return
+      }
+      const settings = await loadViewSettings()
+      rowScale.value = clamp(settings.rowScale)
+    } catch (e) {
+      console.error('Cannot restore view settings:', e)
+    } finally {
+      loaded = true
+    }
+  }
 
   watch(rowScale, (value) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ rowScale: value }))
+    if (!loaded) return
+    saveViewSettings({ rowScale: value }).catch((e) =>
+      console.error('Cannot save view settings:', e)
+    )
   })
 
   /** The preset the current scale corresponds to, if any. */
@@ -80,6 +109,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
     rowScale,
     activePreset,
     percent,
+    restore,
     setScale,
     setPreset,
     nudge,

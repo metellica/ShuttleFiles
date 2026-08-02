@@ -4,6 +4,7 @@
 //! on every platform, so settings are easy to inspect, diff and sync.
 
 pub mod favorites;
+pub mod session;
 
 use std::path::PathBuf;
 

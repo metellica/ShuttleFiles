@@ -1,7 +1,16 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { ROOT } from '@/types/filesystem'
-import { recordVisit } from '@/composables/useTauri'
+import { ROOT, type TabSnapshot } from '@/types/filesystem'
+import { loadTabs, recordVisit, saveTabs } from '@/composables/useTauri'
+
+/**
+ * Tab locking, modelled on Total Commander:
+ * - `none`: an ordinary tab.
+ * - `locked`: the folder is fixed. Navigating elsewhere opens a new tab.
+ * - `locked-allow-dirs`: browsing is allowed, but returning to the tab
+ *   restores its base folder.
+ */
+export type TabLock = 'none' | 'locked' | 'locked-allow-dirs'
 
 export interface Tab {
   id: string
@@ -11,9 +20,18 @@ export interface Tab {
   /** Visited paths for Back/Forward, newest last. */
   history: string[]
   historyIndex: number
+  lock: TabLock
+  /** Base folder a locked tab is pinned to; meaningless when unlocked. */
+  lockedPath: string
 }
 
-const STORAGE_KEY = 'shuttle-files:tabs'
+/** Legacy localStorage key, read once so existing users keep their tabs. */
+const LEGACY_STORAGE_KEY = 'shuttle-files:tabs'
+
+/** True when a soft-locked tab has been browsed away from its base folder. */
+export function hasStrayed(tab: Tab): boolean {
+  return tab.lock === 'locked-allow-dirs' && tab.path !== tab.lockedPath
+}
 
 function titleFor(path: string): string {
   if (path === ROOT) return 'This PC'
@@ -22,13 +40,46 @@ function titleFor(path: string): string {
   return idx >= 0 ? trimmed.slice(idx + 1) || trimmed : trimmed
 }
 
-function makeTab(path = ROOT): Tab {
+function makeTab(path = ROOT, lock: TabLock = 'none', lockedPath = path): Tab {
   return {
     id: crypto.randomUUID(),
     path,
     title: titleFor(path),
     history: [path],
     historyIndex: 0,
+    lock,
+    lockedPath: lock === 'none' ? ROOT : lockedPath,
+  }
+}
+
+function asLock(value: unknown): TabLock {
+  return value === 'locked' || value === 'locked-allow-dirs' ? value : 'none'
+}
+
+/** Rebuild a tab from a persisted snapshot, tolerating older shapes. */
+function tabFromSnapshot(item: unknown): Tab {
+  // The very first builds stored a plain array of paths.
+  if (typeof item === 'string') return makeTab(item)
+  if (!item || typeof item !== 'object') return makeTab()
+  const { path, lock, lockedPath } = item as Record<string, unknown>
+  const mode = asLock(lock)
+  const base = typeof lockedPath === 'string' ? lockedPath : ROOT
+  // A locked tab always comes back on its base folder.
+  const start = mode === 'none' ? (typeof path === 'string' ? path : ROOT) : base
+  return makeTab(start, mode, base)
+}
+
+/** Tabs saved by an older build that used the WebView's localStorage. */
+function takeLegacySnapshot(): unknown[] | null {
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY)
+    if (!raw) return null
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null
+  } catch {
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
+    return null
   }
 }
 
@@ -37,29 +88,40 @@ export const useTabsStore = defineStore('tabs', () => {
   const activeTabId = ref<string | null>(null)
 
   const activeTab = computed(() => tabs.value.find((t) => t.id === activeTabId.value) ?? null)
-  const canGoBack = computed(() => (activeTab.value?.historyIndex ?? 0) > 0)
+  const canGoBack = computed(() => {
+    const tab = activeTab.value
+    return !!tab && tab.lock !== 'locked' && tab.historyIndex > 0
+  })
   const canGoForward = computed(() => {
     const tab = activeTab.value
-    return !!tab && tab.historyIndex < tab.history.length - 1
+    return !!tab && tab.lock !== 'locked' && tab.historyIndex < tab.history.length - 1
   })
 
   function persist() {
-    // Only the paths are worth restoring; history is intentionally session-scoped.
-    const snapshot = tabs.value.map((t) => t.path)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
+    // Only the paths and lock state are worth restoring; history is
+    // intentionally session-scoped.
+    const snapshot: TabSnapshot[] = tabs.value.map((t) => ({
+      path: t.path,
+      lock: t.lock,
+      lockedPath: t.lockedPath,
+    }))
+    saveTabs(snapshot).catch((e) => console.error('Cannot save tabs:', e))
   }
 
-  function restore() {
+  async function restore() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      const paths: unknown = raw ? JSON.parse(raw) : null
-      if (Array.isArray(paths) && paths.length > 0) {
-        tabs.value = paths.map((p) => makeTab(typeof p === 'string' ? p : ROOT))
+      const legacy = takeLegacySnapshot()
+      const saved = legacy ?? (await loadTabs())
+      if (saved.length > 0) {
+        tabs.value = saved.map(tabFromSnapshot)
         activeTabId.value = tabs.value[0]!.id
+        // Writing back turns a migrated localStorage snapshot into tabs.json.
+        if (legacy) persist()
         return
       }
-    } catch {
-      // Corrupt state must never block startup.
+    } catch (e) {
+      // Corrupt or unreadable state must never block startup.
+      console.error('Cannot restore tabs:', e)
     }
     addTab()
   }
@@ -72,9 +134,11 @@ export const useTabsStore = defineStore('tabs', () => {
     return tab
   }
 
-  function closeTab(id: string) {
+  /** Locked tabs resist casual closing; `force` comes from explicit menu actions. */
+  function closeTab(id: string, force = false) {
     const index = tabs.value.findIndex((t) => t.id === id)
     if (index === -1) return
+    if (!force && tabs.value[index]!.lock !== 'none') return
     tabs.value.splice(index, 1)
     if (tabs.value.length === 0) {
       addTab()
@@ -88,7 +152,8 @@ export const useTabsStore = defineStore('tabs', () => {
   }
 
   function closeOthers(id: string) {
-    tabs.value = tabs.value.filter((t) => t.id === id)
+    // Locked tabs survive, matching Total Commander's "close all tabs".
+    tabs.value = tabs.value.filter((t) => t.id === id || t.lock !== 'none')
     activeTabId.value = id
     persist()
   }
@@ -98,8 +163,21 @@ export const useTabsStore = defineStore('tabs', () => {
     if (tab) addTab(tab.path)
   }
 
+  function setLock(id: string, mode: TabLock) {
+    const tab = tabs.value.find((t) => t.id === id)
+    if (!tab) return
+    tab.lock = mode
+    // The folder in view when locking becomes the tab's base folder.
+    tab.lockedPath = mode === 'none' ? ROOT : tab.path
+    persist()
+  }
+
   function setActiveTab(id: string) {
+    const tab = tabs.value.find((t) => t.id === id)
+    if (!tab) return
     activeTabId.value = id
+    // Coming back to a soft-locked tab snaps it to its base folder.
+    if (hasStrayed(tab)) pushHistory(tab, tab.lockedPath)
   }
 
   /** Reorder after a tab drag. */
@@ -121,9 +199,8 @@ export const useTabsStore = defineStore('tabs', () => {
     }
   }
 
-  function navigate(id: string, path: string) {
-    const tab = tabs.value.find((t) => t.id === id)
-    if (!tab || tab.path === path) return
+  function pushHistory(tab: Tab, path: string) {
+    if (tab.path === path) return
     // A new destination truncates any forward history, as in a browser.
     tab.history = tab.history.slice(0, tab.historyIndex + 1)
     tab.history.push(path)
@@ -131,16 +208,27 @@ export const useTabsStore = defineStore('tabs', () => {
     applyPath(tab, path)
   }
 
+  function navigate(id: string, path: string) {
+    const tab = tabs.value.find((t) => t.id === id)
+    if (!tab || tab.path === path) return
+    // A hard-locked tab never leaves its folder; the target opens in a new tab.
+    if (tab.lock === 'locked') {
+      addTab(path)
+      return
+    }
+    pushHistory(tab, path)
+  }
+
   function goBack(id: string) {
     const tab = tabs.value.find((t) => t.id === id)
-    if (!tab || tab.historyIndex <= 0) return
+    if (!tab || tab.lock === 'locked' || tab.historyIndex <= 0) return
     tab.historyIndex--
     applyPath(tab, tab.history[tab.historyIndex]!)
   }
 
   function goForward(id: string) {
     const tab = tabs.value.find((t) => t.id === id)
-    if (!tab || tab.historyIndex >= tab.history.length - 1) return
+    if (!tab || tab.lock === 'locked' || tab.historyIndex >= tab.history.length - 1) return
     tab.historyIndex++
     applyPath(tab, tab.history[tab.historyIndex]!)
   }
@@ -157,6 +245,7 @@ export const useTabsStore = defineStore('tabs', () => {
     closeOthers,
     duplicateTab,
     setActiveTab,
+    setLock,
     moveTab,
     navigate,
     goBack,

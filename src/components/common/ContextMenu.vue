@@ -7,6 +7,8 @@ export interface MenuItem {
   danger?: boolean
   disabled?: boolean
   separator?: boolean
+  /** Renders a tick in the icon column, for radio/toggle style entries. */
+  checked?: boolean
   action?: () => void
 }
 
@@ -78,11 +80,11 @@ function run(item: MenuItem) {
       <button
         v-else
         class="ctx-item"
-        :class="{ disabled: item.disabled, danger: item.danger }"
+        :class="{ disabled: item.disabled, danger: item.danger, checked: item.checked }"
         :disabled="item.disabled"
         @click="run(item)"
       >
-        <span class="ctx-icon">{{ item.icon ?? '' }}</span>
+        <span class="ctx-icon">{{ item.checked ? '✓' : (item.icon ?? '') }}</span>
         <span class="ctx-label">{{ item.label }}</span>
       </button>
     </template>
@@ -130,6 +132,10 @@ function run(item: MenuItem) {
 
 .ctx-item.danger {
   color: #f38ba8;
+}
+
+.ctx-item.checked {
+  color: #89b4fa;
 }
 
 .ctx-icon {

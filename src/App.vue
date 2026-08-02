@@ -149,7 +149,10 @@ function onWindowFocus() {
 }
 
 onMounted(async () => {
-  tabs.restore()
+  await Promise.all([
+    tabs.restore().catch((e) => console.error('Cannot restore tabs:', e)),
+    view.restore(),
+  ])
   places.refresh().catch((e) => console.error('Cannot load places:', e))
   clipboard.refresh()
   window.addEventListener('keydown', onKeyDown)
