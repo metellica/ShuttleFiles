@@ -23,6 +23,15 @@ export interface Tab {
   lock: TabLock
   /** Base folder a locked tab is pinned to; meaningless when unlocked. */
   lockedPath: string
+  /**
+   * Fuzzy-find query for this tab. Per-tab rather than app-wide: a new
+   * tab must start clean even when it opens the folder the search was
+   * run in, and coming back to a tab should restore what you were
+   * looking at. Session-scoped, like `history`.
+   */
+  filter: string
+  /** Whether this tab's query descends into subfolders. */
+  recursive: boolean
 }
 
 /** Legacy localStorage key, read once so existing users keep their tabs. */
@@ -49,6 +58,8 @@ function makeTab(path = ROOT, lock: TabLock = 'none', lockedPath = path): Tab {
     historyIndex: 0,
     lock,
     lockedPath: lock === 'none' ? ROOT : lockedPath,
+    filter: '',
+    recursive: false,
   }
 }
 
@@ -172,6 +183,16 @@ export const useTabsStore = defineStore('tabs', () => {
     persist()
   }
 
+  function setFilter(id: string, value: string) {
+    const tab = tabs.value.find((t) => t.id === id)
+    if (tab) tab.filter = value
+  }
+
+  function setRecursive(id: string, value: boolean) {
+    const tab = tabs.value.find((t) => t.id === id)
+    if (tab) tab.recursive = value
+  }
+
   function setActiveTab(id: string) {
     const tab = tabs.value.find((t) => t.id === id)
     if (!tab) return
@@ -191,6 +212,9 @@ export const useTabsStore = defineStore('tabs', () => {
   function applyPath(tab: Tab, path: string) {
     tab.path = path
     tab.title = titleFor(path)
+    // A query is about the folder it was typed in; carrying it into the
+    // next one would silently hide most of what is there.
+    tab.filter = ''
     persist()
     if (path !== ROOT) {
       recordVisit(path).catch(() => {
@@ -246,6 +270,8 @@ export const useTabsStore = defineStore('tabs', () => {
     duplicateTab,
     setActiveTab,
     setLock,
+    setFilter,
+    setRecursive,
     moveTab,
     navigate,
     goBack,

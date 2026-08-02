@@ -1,6 +1,9 @@
 pub mod drives;
+pub mod fuzzy;
+pub mod hash;
 pub mod local;
 pub mod path;
+pub mod search;
 
 use serde::{Deserialize, Serialize};
 

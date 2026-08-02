@@ -30,6 +30,9 @@ env_logger = "0.11"
 uuid = { version = "1", features = ["v4"] }
 # Parallel directory walking for the scan phase of large trees.
 jwalk = "0.8"
+# Checksums, streamed in one pass.
+md-5 = "0.10"
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

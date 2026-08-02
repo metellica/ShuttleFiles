@@ -63,3 +63,46 @@ export interface TabSnapshot {
 export interface ViewSettings {
   rowScale: number
 }
+
+/**
+ * A fuzzy-search match. The entry's fields are flattened in, so a hit can
+ * be rendered by the file list without unwrapping.
+ */
+export interface SearchHit extends FileEntry {
+  /** Path relative to the search root; equal to `name` when not recursive. */
+  rel: string
+  score: number
+  /** Char indices into `rel` that matched, for highlighting. */
+  positions: number[]
+}
+
+export interface SearchResult {
+  hits: SearchHit[]
+  /** Total matches found, which may exceed `hits.length`. */
+  total: number
+  scanned: number
+  truncated: boolean
+  cancelled: boolean
+}
+
+export type HashAlgo = 'md5' | 'sha256'
+
+export interface HashResult {
+  path: string
+  name: string
+  size: number
+  md5: string
+  sha256: string
+  /** Empty on success. */
+  error: string
+}
+
+export interface HashProgress {
+  id: string
+  path: string
+  /** 1-based position in the batch. */
+  index: number
+  total: number
+  doneBytes: number
+  totalBytes: number
+}

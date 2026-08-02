@@ -1,3 +1,4 @@
+pub mod cancel;
 pub mod commands;
 pub mod config;
 pub mod error;
@@ -13,6 +14,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(ops::OpsRegistry::default())
+        .manage(cancel::SearchCancels::default())
+        .manage(cancel::HashCancels::default())
         .invoke_handler(tauri::generate_handler![
             commands::filesystem::list_dir,
             commands::filesystem::resolve_path,
@@ -34,6 +37,10 @@ pub fn run() {
             commands::session::save_tabs,
             commands::session::load_view_settings,
             commands::session::save_view_settings,
+            commands::find::fuzzy_find,
+            commands::find::cancel_search,
+            commands::find::start_hash,
+            commands::find::cancel_hash,
             commands::clipboard::clipboard_write_files,
             commands::clipboard::clipboard_read_files,
             commands::clipboard::clipboard_has_files,

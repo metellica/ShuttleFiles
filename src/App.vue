@@ -22,18 +22,30 @@ const view = useViewSettingsStore()
 
 let unlistenOps: UnlistenFn | null = null
 
-const filter = ref('')
-const stats = ref({ total: 0, selected: 0 })
+const stats = ref({ total: 0, selected: 0, searching: false, truncated: false })
 const upTarget = ref<string | null>(null)
 const browserRef = ref<InstanceType<typeof FileBrowser> | null>(null)
 const toolbarRef = ref<InstanceType<typeof Toolbar> | null>(null)
 
 const currentPath = computed(() => tabs.activeTab?.path ?? ROOT)
 
+// The query belongs to the tab, so switching tabs restores what that tab
+// was looking at and a new tab always starts clean.
+const filter = computed({
+  get: () => tabs.activeTab?.filter ?? '',
+  set: (value: string) => {
+    if (tabs.activeTabId) tabs.setFilter(tabs.activeTabId, value)
+  },
+})
+
+const recursive = computed({
+  get: () => tabs.activeTab?.recursive ?? false,
+  set: (value: boolean) => {
+    if (tabs.activeTabId) tabs.setRecursive(tabs.activeTabId, value)
+  },
+})
+
 watch(currentPath, async (path) => {
-  // Filtering is per-location: keeping it across navigation hides files
-  // in the new folder for no obvious reason.
-  filter.value = ''
   upTarget.value = path === ROOT ? null : await parentPath(path)
 }, { immediate: true })
 
@@ -74,6 +86,18 @@ function onKeyDown(e: KeyboardEvent) {
   if (mod && e.key.toLowerCase() === 'l') {
     e.preventDefault()
     toolbarRef.value?.focusPathBar()
+    return
+  }
+  // Ctrl+F filters this folder, Ctrl+Shift+F descends — the same query
+  // and the same ranking either way.
+  if (mod && e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    toolbarRef.value?.focusFilter(e.shiftKey)
+    return
+  }
+  if (e.key === 'Escape' && filter.value && !typing) {
+    e.preventDefault()
+    filter.value = ''
     return
   }
   if (e.altKey && e.key === 'ArrowLeft') {
@@ -136,6 +160,9 @@ function onKeyDown(e: KeyboardEvent) {
   } else if (e.key === 'Delete') {
     e.preventDefault()
     browserRef.value?.remove()
+  } else if (mod && e.shiftKey && e.key.toLowerCase() === 'h') {
+    e.preventDefault()
+    browserRef.value?.hash()
   }
 }
 
@@ -184,6 +211,10 @@ onUnmounted(() => {
       :can-go-up="upTarget !== null"
       :is-favorite="places.isFavorite(currentPath)"
       :filter="filter"
+      :recursive="recursive"
+      :searching="stats.searching"
+      :matches="stats.total"
+      :truncated="stats.truncated"
       @back="tabs.activeTabId && tabs.goBack(tabs.activeTabId)"
       @forward="tabs.activeTabId && tabs.goForward(tabs.activeTabId)"
       @up="upTarget !== null && navigate(upTarget)"
@@ -192,6 +223,7 @@ onUnmounted(() => {
       @new-folder="browserRef?.newFolder()"
       @toggle-favorite="toggleFavorite"
       @update:filter="filter = $event"
+      @update:recursive="recursive = $event"
     />
 
     <main class="content">
@@ -201,8 +233,10 @@ onUnmounted(() => {
         ref="browserRef"
         :path="currentPath"
         :filter="filter"
+        :recursive="recursive"
         @navigate="navigate"
         @new-tab="newTab($event)"
+        @find="toolbarRef?.focusFilter($event)"
         @stats="stats = $event"
       />
     </main>
@@ -210,7 +244,11 @@ onUnmounted(() => {
     <OperationBar />
 
     <footer class="status">
-      <span>{{ stats.total }} items</span>
+      <span v-if="filter">
+        {{ stats.searching ? 'Searching…' : `${stats.total} match${stats.total === 1 ? '' : 'es'}` }}
+        <template v-if="stats.truncated"> (showing the best)</template>
+      </span>
+      <span v-else>{{ stats.total }} items</span>
       <span v-if="stats.selected">· {{ stats.selected }} selected</span>
       <span class="spacer" />
       <span class="path">{{ currentPath || 'This PC' }}</span>

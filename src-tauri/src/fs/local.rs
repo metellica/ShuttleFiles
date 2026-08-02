@@ -40,7 +40,14 @@ fn extension_of(name: &str, is_dir: bool) -> String {
     }
 }
 
-fn to_entry(dir: &str, name: String, meta: &std::fs::Metadata, is_symlink: bool) -> FileEntry {
+/// Build a row from metadata that has already been read. Shared with the
+/// recursive search, which knows the full path but not the parent.
+pub(crate) fn entry_at(
+    path: String,
+    name: String,
+    meta: &std::fs::Metadata,
+    is_symlink: bool,
+) -> FileEntry {
     let modified = meta
         .modified()
         .ok()
@@ -49,7 +56,7 @@ fn to_entry(dir: &str, name: String, meta: &std::fs::Metadata, is_symlink: bool)
         .unwrap_or(0);
     let is_dir = meta.is_dir();
     FileEntry {
-        path: path::join(dir, &name),
+        path,
         ext: extension_of(&name, is_dir),
         is_hidden: is_hidden(&name, meta),
         is_symlink,
@@ -58,6 +65,10 @@ fn to_entry(dir: &str, name: String, meta: &std::fs::Metadata, is_symlink: bool)
         modified,
         name,
     }
+}
+
+fn to_entry(dir: &str, name: String, meta: &std::fs::Metadata, is_symlink: bool) -> FileEntry {
+    entry_at(path::join(dir, &name), name, meta, is_symlink)
 }
 
 /// Directories first, then case-insensitive name — Explorer's default.

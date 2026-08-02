@@ -3,8 +3,10 @@ import type {
   DirListing,
   DriveInfo,
   Favorite,
+  HashAlgo,
   PlaceEntry,
   RecentEntry,
+  SearchResult,
   TabSnapshot,
   ViewSettings,
 } from '@/types/filesystem'
@@ -97,3 +99,27 @@ export const loadViewSettings = () => invoke<ViewSettings>('load_view_settings')
 
 export const saveViewSettings = (settings: ViewSettings) =>
   invoke<void>('save_view_settings', { settings })
+
+// --- Fuzzy search ------------------------------------------------------------
+
+/**
+ * Fuzzy-find inside `dir`. Reusing an `id` cancels the previous search
+ * for it, which is what makes searching on every keystroke affordable.
+ */
+export const fuzzyFind = (
+  id: string,
+  dir: string,
+  query: string,
+  recursive: boolean,
+  limit?: number
+) => invoke<SearchResult>('fuzzy_find', { id, dir, query, recursive, limit })
+
+export const cancelSearch = (id: string) => invoke<void>('cancel_search', { id })
+
+// --- Checksums ---------------------------------------------------------------
+
+/** Results stream back as `hash:result`, ending with `hash:finished`. */
+export const startHash = (id: string, paths: string[], algos: HashAlgo[]) =>
+  invoke<void>('start_hash', { id, paths, algos })
+
+export const cancelHash = (id: string) => invoke<void>('cancel_hash', { id })

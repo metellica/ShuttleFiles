@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { FileEntry } from '@/types/filesystem'
+import type { FileEntry, SearchHit } from '@/types/filesystem'
 import { fileIcon, formatSize, formatTime } from '@/composables/useFormat'
 import { useViewSettingsStore } from '@/stores/viewSettings'
 
 const props = defineProps<{
-  entries: FileEntry[]
+  entries: FileEntry[] | SearchHit[]
   loading: boolean
   error: string
+  /** Entries are ranked search hits, so relevance is the natural order. */
+  searchMode?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -16,7 +18,8 @@ const emit = defineEmits<{
   'selection-change': [paths: string[]]
 }>()
 
-type SortKey = 'name' | 'size' | 'modified' | 'ext'
+/** `relevance` keeps the backend's ranking; it only exists while searching. */
+type SortKey = 'name' | 'size' | 'modified' | 'ext' | 'relevance'
 
 const view = useViewSettingsStore()
 const selected = ref<Set<string>>(new Set())
@@ -24,6 +27,34 @@ const anchorIndex = ref<number | null>(null)
 const sortKey = ref<SortKey>('name')
 const sortAsc = ref(true)
 const rootRef = ref<HTMLElement | null>(null)
+
+/** Entering or leaving a search resets to that mode's natural order. */
+watch(
+  () => props.searchMode,
+  (searching) => {
+    sortKey.value = searching ? 'relevance' : 'name'
+    sortAsc.value = true
+  },
+  { immediate: true }
+)
+
+/** Split a label into matched / unmatched runs for highlighting. */
+function segments(entry: FileEntry | SearchHit) {
+  const hit = entry as SearchHit
+  const label = hit.rel ?? entry.name
+  if (!hit.positions?.length) return [{ text: label, hit: false }]
+
+  const chars = [...label]
+  const marked = new Set(hit.positions)
+  const runs: { text: string; hit: boolean }[] = []
+  for (let i = 0; i < chars.length; i++) {
+    const on = marked.has(i)
+    const last = runs[runs.length - 1]
+    if (last && last.hit === on) last.text += chars[i]
+    else runs.push({ text: chars[i]!, hit: on })
+  }
+  return runs
+}
 
 /** Ctrl+wheel zooms the rows instead of scrolling, as in browsers. */
 function onWheel(e: WheelEvent) {
@@ -54,6 +85,9 @@ watch(
 
 const sorted = computed(() => {
   const list = [...props.entries]
+  // Ranked hits arrive best-first; re-sorting them would throw the
+  // ranking away, which is the whole point of a fuzzy search.
+  if (sortKey.value === 'relevance') return list
   const dir = sortAsc.value ? 1 : -1
   list.sort((a, b) => {
     // Directories always lead, regardless of the active sort column.
@@ -139,6 +173,7 @@ defineExpose({
     <div class="head">
       <button class="col name" @click="setSort('name')">
         Name<span v-if="sortKey === 'name'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
+        <span v-else-if="sortKey === 'relevance'" class="rank-hint"> · by relevance</span>
       </button>
       <button class="col size" @click="setSort('size')">
         Size<span v-if="sortKey === 'size'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
@@ -154,7 +189,9 @@ defineExpose({
     <div class="body" @contextmenu.self.prevent="onBlankContext">
       <div v-if="loading" class="notice">Loading…</div>
       <div v-else-if="error" class="notice error">{{ error }}</div>
-      <div v-else-if="sorted.length === 0" class="notice">This folder is empty</div>
+      <div v-else-if="sorted.length === 0" class="notice">
+        {{ props.searchMode ? 'No matches' : 'This folder is empty' }}
+      </div>
 
       <div
         v-for="(entry, index) in sorted"
@@ -168,7 +205,14 @@ defineExpose({
       >
         <div class="col name">
           <span class="icon">{{ fileIcon(entry.ext, entry.isDir) }}</span>
-          <span class="label">{{ entry.name }}</span>
+          <span class="label"
+            ><span
+              v-for="(part, i) in segments(entry)"
+              :key="i"
+              :class="{ mark: part.hit }"
+              >{{ part.text }}</span
+            ></span
+          >
           <span v-if="entry.isSymlink" class="link-badge" title="Symbolic link">↗</span>
         </div>
         <div class="col size">{{ entry.isDir ? '' : formatSize(entry.size) }}</div>
@@ -283,6 +327,16 @@ defineExpose({
 .label {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.mark {
+  color: #f9e2af;
+  font-weight: 600;
+}
+
+.rank-hint {
+  color: #6c7086;
+  font-size: 0.9em;
 }
 
 .link-badge {

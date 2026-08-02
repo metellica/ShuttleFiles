@@ -1,28 +1,32 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { confirm } from '@tauri-apps/plugin-dialog'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
-import type { FileEntry } from '@/types/filesystem'
+import type { FileEntry, HashAlgo } from '@/types/filesystem'
 import { ROOT } from '@/types/filesystem'
 import * as api from '@/composables/useTauri'
 import { promptText } from '@/composables/usePrompt'
+import { useFuzzySearch } from '@/composables/useFuzzySearch'
 import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { usePlacesStore } from '@/stores/places'
 import ContextMenu, { type MenuItem } from '@/components/common/ContextMenu.vue'
+import HashDialog from '@/components/common/HashDialog.vue'
 import FastDial from '@/components/browser/FastDial.vue'
 import FileList from '@/components/browser/FileList.vue'
 
-const props = defineProps<{ path: string; filter: string }>()
+const props = defineProps<{ path: string; filter: string; recursive: boolean }>()
 const emit = defineEmits<{
   navigate: [path: string]
   'new-tab': [path: string]
-  stats: [value: { total: number; selected: number }]
+  find: [recursive: boolean]
+  stats: [value: { total: number; selected: number; searching: boolean; truncated: boolean }]
 }>()
 
 const clipboard = useClipboardStore()
 const ops = useOperationsStore()
 const places = usePlacesStore()
+const search = useFuzzySearch()
 
 const entries = ref<FileEntry[]>([])
 const selection = ref<string[]>([])
@@ -30,15 +34,21 @@ const loading = ref(false)
 const error = ref('')
 const listRef = ref<InstanceType<typeof FileList> | null>(null)
 const ctx = ref({ visible: false, x: 0, y: 0, items: [] as MenuItem[] })
+const hashPaths = ref<string[]>([])
+const hashAlgos = ref<HashAlgo[]>(['md5', 'sha256'])
 
 /** Guards against an old, slow listing overwriting a newer one. */
 let requestId = 0
 
-const visibleEntries = computed(() => {
-  const needle = props.filter.trim().toLowerCase()
-  if (!needle) return entries.value
-  return entries.value.filter((e) => e.name.toLowerCase().includes(needle))
-})
+const searchMode = computed(() => props.filter.trim().length > 0 && props.path !== ROOT)
+
+/**
+ * Filtering goes through the same Rust matcher the recursive finder
+ * uses, so a query ranks identically whether or not it descends.
+ */
+const visibleEntries = computed<FileEntry[]>(() =>
+  searchMode.value ? search.hits.value : entries.value
+)
 
 async function load() {
   if (props.path === ROOT) {
@@ -69,10 +79,24 @@ watch(() => props.path, load, { immediate: true })
 watch(() => ops.completionTick, load)
 
 watch(
-  [visibleEntries, selection],
-  ([list, sel]) => emit('stats', { total: list.length, selected: sel.length }),
+  [() => props.filter, () => props.recursive, () => props.path],
+  ([filter, recursive, path]) => search.schedule(path, filter, recursive),
   { immediate: true }
 )
+
+watch(
+  [visibleEntries, selection, search.searching, search.truncated],
+  ([list, sel, searching, truncated]) =>
+    emit('stats', {
+      total: searchMode.value ? search.total.value : list.length,
+      selected: sel.length,
+      searching,
+      truncated,
+    }),
+  { immediate: true }
+)
+
+onUnmounted(() => search.dispose())
 
 function open(entry: FileEntry) {
   if (entry.isDir) {
@@ -179,6 +203,52 @@ async function showShellMenu(paths: string[], anchor: { x: number; y: number }) 
   }
 }
 
+/** Checksums are only meaningful for files, so folders are never included. */
+function selectedFiles(): string[] {
+  const known = new Map(visibleEntries.value.map((e) => [e.path, e]))
+  return selection.value.filter((p) => !known.get(p)?.isDir)
+}
+
+function openHashDialog(algos: HashAlgo[] = ['md5', 'sha256']) {
+  const files = selectedFiles()
+  if (files.length === 0) return
+  hashAlgos.value = algos
+  hashPaths.value = files
+}
+
+/** The checksum entry, as a submenu so a single digest can be picked. */
+function hashMenu(): MenuItem {
+  const count = selectedFiles().length
+  return {
+    label: count > 1 ? `Checksum (${count})` : 'Checksum',
+    icon: '#️⃣',
+    disabled: count === 0,
+    children: [
+      { label: 'MD5', action: () => openHashDialog(['md5']) },
+      { label: 'SHA-256', action: () => openHashDialog(['sha256']) },
+      { separator: true },
+      { label: 'MD5 and SHA-256', action: () => openHashDialog(['md5', 'sha256']) },
+    ],
+  }
+}
+
+/**
+ * A search hit is usually somewhere the current tab is not, so the useful
+ * "new tab" target is the folder it lives in; for a folder, itself.
+ */
+async function openInNewTab(entry: FileEntry) {
+  if (entry.isDir) {
+    emit('new-tab', entry.path)
+    return
+  }
+  try {
+    const parent = await api.parentPath(entry.path)
+    if (parent) emit('new-tab', parent)
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+
 async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   // The clipboard may have been filled by Explorer since the last check.
   await clipboard.refresh()
@@ -189,12 +259,12 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   const items: MenuItem[] = entry
     ? [
         { label: 'Open', icon: '↩', action: () => open(entry) },
-        ...(entry.isDir
+        ...(entry.isDir || searchMode.value
           ? [
               {
-                label: 'Open in New Tab',
+                label: entry.isDir ? 'Open in New Tab' : 'Open Containing Folder in New Tab',
                 icon: '⧉',
-                action: () => emit('new-tab', entry.path),
+                action: () => openInNewTab(entry),
               },
             ]
           : []),
@@ -219,6 +289,18 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
         { label: 'Rename', icon: '✏️', disabled: many !== 1, action: doRename },
         { label: 'Delete', icon: '🗑', danger: true, action: doDelete },
         { separator: true },
+        ...(entry.isDir
+          ? [
+              {
+                label: 'Find in This Folder…',
+                icon: '🔍',
+                action: () => {
+                  emit('navigate', entry.path)
+                  emit('find', true)
+                },
+              },
+            ]
+          : [hashMenu()]),
         ...(entry.isDir
           ? [
               {
@@ -252,6 +334,17 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
         { label: 'Refresh', icon: '⟳', action: load },
         { separator: true },
         {
+          label: 'Find in Folder… (Ctrl+Shift+F)',
+          icon: '🔍',
+          action: () => emit('find', true),
+        },
+        {
+          label: 'Filter This Folder… (Ctrl+F)',
+          icon: '🔤',
+          action: () => emit('find', false),
+        },
+        { separator: true },
+        {
           label: places.isFavorite(props.path) ? 'Remove Favorite' : 'Add to Favorites',
           icon: '⭐',
           action: () => places.toggleFavorite(props.path),
@@ -280,6 +373,7 @@ defineExpose({
   paste: doPaste,
   copy: doCopy,
   cut: doCut,
+  hash: () => openHashDialog(),
   selectAll: () => listRef.value?.selectAll(),
 })
 </script>
@@ -292,7 +386,8 @@ defineExpose({
       ref="listRef"
       :entries="visibleEntries"
       :loading="loading"
-      :error="error"
+      :error="error || search.error.value"
+      :search-mode="searchMode"
       @open="open"
       @context="openContextMenu"
       @selection-change="selection = $event"
@@ -303,6 +398,12 @@ defineExpose({
       :y="ctx.y"
       :items="ctx.items"
       @close="ctx.visible = false"
+    />
+    <HashDialog
+      v-if="hashPaths.length"
+      :paths="hashPaths"
+      :algos="hashAlgos"
+      @close="hashPaths = []"
     />
   </div>
 </template>

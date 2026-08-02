@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import PathBar from '@/components/browser/PathBar.vue'
 import DensityControl from '@/components/layout/DensityControl.vue'
 
@@ -10,6 +10,10 @@ const props = defineProps<{
   canGoUp: boolean
   isFavorite: boolean
   filter: string
+  recursive: boolean
+  searching: boolean
+  matches: number
+  truncated: boolean
 }>()
 
 const emit = defineEmits<{
@@ -21,11 +25,20 @@ const emit = defineEmits<{
   'new-folder': []
   'toggle-favorite': []
   'update:filter': [value: string]
+  'update:recursive': [value: boolean]
 }>()
 
 const pathBarRef = ref<InstanceType<typeof PathBar> | null>(null)
+const filterRef = ref<HTMLInputElement | null>(null)
 
-defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit() })
+async function focusFilter(recursive?: boolean) {
+  if (recursive !== undefined) emit('update:recursive', recursive)
+  await nextTick()
+  filterRef.value?.focus()
+  filterRef.value?.select()
+}
+
+defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 </script>
 
 <template>
@@ -48,13 +61,34 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit() })
 
     <PathBar ref="pathBarRef" :path="props.path" @navigate="emit('navigate', $event)" />
 
-    <input
-      class="filter"
-      :value="props.filter"
-      placeholder="Filter…"
-      spellcheck="false"
-      @input="emit('update:filter', ($event.target as HTMLInputElement).value)"
-    />
+    <div class="find">
+      <input
+        ref="filterRef"
+        class="filter"
+        :value="props.filter"
+        :placeholder="props.recursive ? 'Find in tree…' : 'Fuzzy filter…'"
+        spellcheck="false"
+        @input="emit('update:filter', ($event.target as HTMLInputElement).value)"
+        @keydown.esc="emit('update:filter', '')"
+      />
+      <span v-if="props.filter" class="hits">
+        <template v-if="props.searching">…</template>
+        <template v-else>{{ props.matches }}{{ props.truncated ? '+' : '' }}</template>
+      </span>
+      <button
+        class="nav-btn recurse"
+        :class="{ on: props.recursive }"
+        :disabled="!props.path"
+        :title="
+          props.recursive
+            ? 'Searching subfolders (Ctrl+Shift+F)'
+            : 'Searching this folder only (Ctrl+Shift+F)'
+        "
+        @click="emit('update:recursive', !props.recursive)"
+      >
+        ⤶
+      </button>
+    </div>
 
     <button
       class="nav-btn"
@@ -120,10 +154,36 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit() })
   font-size: 12px;
   font-family: inherit;
   padding: 0 8px;
+  padding-right: 34px;
   outline: none;
 }
 
 .filter:focus {
   border-color: #89b4fa;
+}
+
+.find {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.hits {
+  position: absolute;
+  right: 32px;
+  font-size: 10px;
+  color: #6c7086;
+  pointer-events: none;
+}
+
+.recurse {
+  font-size: 14px;
+}
+
+.recurse.on {
+  color: #89b4fa;
+  background: #313244;
 }
 </style>
