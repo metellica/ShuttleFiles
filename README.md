@@ -35,6 +35,9 @@ work. Remaining: remote shares (R4).
   kernel-side `CopyFile2`; see [Performance](#performance) for measurements
 - ✂️ **File operations** — Rename, Delete (with confirmation), New Folder,
   collision-safe `name (2)` destinations, same-volume moves via rename
+- 🔗 **Links preserved** — a junction or directory symlink is recreated at the
+  destination pointing at the same target instead of duplicating what it shares,
+  and delete unlinks it without touching the target
 - 🖱 **System integration** — open files with their default app, Show in Explorer
 - 📝 **Editor for text files** — pick one program in ⚙ Settings and every text
   extension opens with it, on double click and from the context menu, without

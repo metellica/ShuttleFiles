@@ -474,9 +474,180 @@ mod native_copy {
     }
 }
 
+/// Reproducing a directory link — a junction or a directory symlink — at
+/// the destination.
+///
+/// `CopyFile2` refuses the link itself with `ERROR_ACCESS_DENIED`, which
+/// is what made any tree containing one fail to copy. Copying what the
+/// link points at instead would duplicate exactly the data the link
+/// exists to share, so the link is recreated, aimed at the same target.
+#[cfg(windows)]
+mod dir_link {
+    use std::ffi::c_void;
+    use std::path::Path;
+
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::{CloseHandle, GENERIC_WRITE};
+    use windows::Win32::Storage::FileSystem::{
+        CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_NONE,
+        OPEN_EXISTING,
+    };
+    use windows::Win32::System::Ioctl::FSCTL_SET_REPARSE_POINT;
+    use windows::Win32::System::SystemServices::IO_REPARSE_TAG_MOUNT_POINT;
+    use windows::Win32::System::IO::DeviceIoControl;
+
+    use crate::error::{AppError, AppResult};
+
+    /// `MAXIMUM_REPARSE_DATA_BUFFER_SIZE` minus the two headers, in
+    /// `u16`s. Longer targets cannot exist as a reparse point at all.
+    const PATH_BUFFER_LEN: usize = (16 * 1024 - 8 - 8) / 2;
+
+    /// The mount-point flavour of `REPARSE_DATA_BUFFER`. `u32` first, so
+    /// the value is aligned as the kernel expects when it is handed over.
+    #[repr(C)]
+    struct MountPointBuffer {
+        reparse_tag: u32,
+        reparse_data_length: u16,
+        reserved: u16,
+        substitute_name_offset: u16,
+        substitute_name_length: u16,
+        print_name_offset: u16,
+        print_name_length: u16,
+        path_buffer: [u16; PATH_BUFFER_LEN],
+    }
+
+    fn wide(path: &Path) -> Vec<u16> {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    /// Recreate `src`'s link at `dst`. A directory symlink is preferred
+    /// when that is what the source was, but creating one needs a
+    /// privilege ordinary accounts lack, so a junction — which needs
+    /// none — is the fallback for a local absolute target.
+    pub fn replicate(src: &Path, dst: &Path) -> AppResult<()> {
+        let target = std::fs::read_link(src)
+            .map_err(|e| AppError::Io(format!("Cannot read link {}: {}", src.display(), e)))?;
+
+        if is_symlink(src) {
+            if std::os::windows::fs::symlink_dir(&target, dst).is_ok() {
+                return Ok(());
+            }
+        }
+        create_junction(dst, &target)
+    }
+
+    /// A junction and a directory symlink are both `is_symlink_dir`; only
+    /// the reparse tag tells them apart.
+    fn is_symlink(path: &Path) -> bool {
+        reparse_tag(path).is_some_and(|tag| tag != IO_REPARSE_TAG_MOUNT_POINT)
+    }
+
+    fn reparse_tag(path: &Path) -> Option<u32> {
+        use windows::Win32::Storage::FileSystem::{
+            FindClose, FindFirstFileW, FILE_ATTRIBUTE_REPARSE_POINT, WIN32_FIND_DATAW,
+        };
+
+        let mut data = WIN32_FIND_DATAW::default();
+        let handle = unsafe { FindFirstFileW(PCWSTR(wide(path).as_ptr()), &mut data) }.ok()?;
+        unsafe { FindClose(handle) }.ok()?;
+        if data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 == 0 {
+            return None;
+        }
+        // `dwReserved0` carries the reparse tag for a reparse point.
+        Some(data.dwReserved0)
+    }
+
+    fn create_junction(link: &Path, target: &Path) -> AppResult<()> {
+        let target = target.to_string_lossy();
+        // The kernel wants an NT path; the print name is what tools show.
+        let print: Vec<u16> = target.trim_end_matches('\\').encode_utf16().collect();
+        let substitute: Vec<u16> = format!(
+            "\\??\\{}",
+            target
+                .trim_start_matches("\\\\?\\")
+                .trim_end_matches('\\')
+        )
+        .encode_utf16()
+        .collect();
+
+        if substitute.len() + print.len() + 2 > PATH_BUFFER_LEN {
+            return Err(AppError::InvalidPath(format!(
+                "Link target is too long: {}",
+                target
+            )));
+        }
+
+        let mut buffer = Box::new(MountPointBuffer {
+            reparse_tag: IO_REPARSE_TAG_MOUNT_POINT,
+            reparse_data_length: 0,
+            reserved: 0,
+            substitute_name_offset: 0,
+            substitute_name_length: (substitute.len() * 2) as u16,
+            print_name_offset: (substitute.len() * 2 + 2) as u16,
+            print_name_length: (print.len() * 2) as u16,
+            path_buffer: [0; PATH_BUFFER_LEN],
+        });
+        buffer.path_buffer[..substitute.len()].copy_from_slice(&substitute);
+        buffer.path_buffer[substitute.len() + 1..substitute.len() + 1 + print.len()]
+            .copy_from_slice(&print);
+        // The four offset/length fields plus both NUL-terminated names.
+        let data_length = 8 + (substitute.len() + print.len() + 2) * 2;
+        buffer.reparse_data_length = data_length as u16;
+
+        std::fs::create_dir(link)
+            .map_err(|e| AppError::Io(format!("Cannot create {}: {}", link.display(), e)))?;
+
+        let result = set_reparse_point(link, &buffer, 8 + data_length);
+        if result.is_err() {
+            // Leaving an empty directory behind would masquerade as a
+            // successful copy of the link.
+            let _ = std::fs::remove_dir(link);
+        }
+        result
+    }
+
+    fn set_reparse_point(link: &Path, buffer: &MountPointBuffer, len: usize) -> AppResult<()> {
+        let handle = unsafe {
+            CreateFileW(
+                PCWSTR(wide(link).as_ptr()),
+                GENERIC_WRITE.0,
+                FILE_SHARE_NONE,
+                None,
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+                None,
+            )
+        }
+        .map_err(|e| AppError::Io(format!("Cannot open {}: {}", link.display(), e)))?;
+
+        let outcome = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_SET_REPARSE_POINT,
+                Some(buffer as *const MountPointBuffer as *const c_void),
+                len as u32,
+                None,
+                0,
+                None,
+                None,
+            )
+        };
+        unsafe { CloseHandle(handle) }.ok();
+
+        outcome.map_err(|e| AppError::Io(format!("Cannot link {}: {}", link.display(), e)))
+    }
+}
+
 /// Copy one file, creating the destination's parent if the tree changed
 /// since the scan.
 fn copy_one(src: &Path, dst: &Path, size: u64, progress: &dyn Progress) -> AppResult<()> {
+    if is_directory_link(src) {
+        return copy_directory_link(src, dst, progress);
+    }
     match native_copy::copy_file(src, dst, size, progress) {
         Ok(()) => Ok(()),
         Err(AppError::Cancelled) => Err(AppError::Cancelled),
@@ -490,6 +661,43 @@ fn copy_one(src: &Path, dst: &Path, size: u64, progress: &dyn Progress) -> AppRe
             native_copy::copy_file(src, dst, size, progress)
         }
     }
+}
+
+/// A junction or directory symlink is reproduced as a link to the same
+/// target. When it cannot be recreated the contents are copied instead,
+/// which at least leaves usable data behind rather than failing the job.
+fn copy_directory_link(src: &Path, dst: &Path, progress: &dyn Progress) -> AppResult<()> {
+    #[cfg(windows)]
+    match dir_link::replicate(src, dst) {
+        Ok(()) => return Ok(()),
+        Err(e) => log::warn!(
+            "Cannot recreate the link {}; copying its contents instead: {}",
+            src.display(),
+            e
+        ),
+    }
+    copy_link_contents(src, dst, progress)
+}
+
+fn copy_link_contents(src: &Path, dst: &Path, progress: &dyn Progress) -> AppResult<()> {
+    let target = std::fs::canonicalize(src)
+        .map_err(|e| AppError::Io(format!("Cannot resolve {}: {}", src.display(), e)))?;
+
+    // A link pointing at an ancestor of its own destination would copy
+    // into itself for as long as the disk holds out.
+    let resolved_dst = dst
+        .parent()
+        .and_then(|p| std::fs::canonicalize(p).ok())
+        .map(|p| p.join(dst.file_name().unwrap_or_default()));
+    if resolved_dst.is_some_and(|d| d.starts_with(&target)) {
+        return Err(AppError::InvalidPath(format!(
+            "{} points at its own destination",
+            src.display()
+        )));
+    }
+
+    let plan = scan_source(&target, progress)?;
+    copy_source(&plan, dst, progress)
 }
 
 // --- Deleting ---------------------------------------------------------------
@@ -1042,6 +1250,65 @@ mod tests {
 
         assert!(!tree.exists());
         assert_eq!(std::fs::read(target.join("keep.txt")).unwrap(), b"keep");
+    }
+
+    /// `CopyFile2` refuses a junction with ERROR_ACCESS_DENIED, so the
+    /// link has to be recreated rather than copied through.
+    #[cfg(windows)]
+    #[test]
+    fn copy_recreates_a_junction_instead_of_its_contents() {
+        let tmp = TempDir::new();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("shared.txt"), b"shared").unwrap();
+
+        let link = tmp.path().join("link");
+        if !make_junction(&link, &target) {
+            return;
+        }
+        let dst = tmp.path().join("link-copy");
+
+        copy_source(&plan_for(&link), &dst, &Counter::default()).unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(&dst)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "the copy is a link, not a directory of duplicated data"
+        );
+        assert_eq!(std::fs::read_link(&dst).unwrap(), target);
+        // Reachable through the new link, and still a single copy.
+        assert_eq!(std::fs::read(dst.join("shared.txt")).unwrap(), b"shared");
+    }
+
+    /// A junction nested in a copied tree reaches the file worker, which
+    /// is where the reported ACCESS_DENIED came from.
+    #[cfg(windows)]
+    #[test]
+    fn copy_of_a_tree_containing_a_junction_succeeds() {
+        let tmp = TempDir::new();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("shared.txt"), b"shared").unwrap();
+
+        let tree = tmp.path().join("tree");
+        std::fs::create_dir_all(tree.join("sub")).unwrap();
+        std::fs::write(tree.join("a.txt"), b"aaaa").unwrap();
+        if !make_junction(&tree.join("sub").join("data"), &target) {
+            return;
+        }
+        let dst = tmp.path().join("tree-copy");
+
+        copy_source(&plan_for(&tree), &dst, &Counter::default()).unwrap();
+
+        assert_eq!(std::fs::read(dst.join("a.txt")).unwrap(), b"aaaa");
+        let copied_link = dst.join("sub").join("data");
+        assert_eq!(std::fs::read_link(&copied_link).unwrap(), target);
+        assert_eq!(
+            std::fs::read(copied_link.join("shared.txt")).unwrap(),
+            b"shared"
+        );
     }
 
     #[test]
