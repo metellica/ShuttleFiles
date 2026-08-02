@@ -1,7 +1,8 @@
 # ShuttleFiles
 
 A lightweight local file browser built with **Tauri 2 + Vue 3 + Rust**, sharing
-the tech stack and visual language of [ShuttleSFTP](../ShuttleSFTP).
+the tech stack and visual language of
+[ShuttleSFTP](https://github.com/metellica/ShuttleSFTP).
 
 ## Status
 
