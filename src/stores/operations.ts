@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import * as api from '@/composables/useTauri'
-import type { JobKind, JobState } from '@/types/operations'
+import type { JobKind, JobOptions, JobState } from '@/types/operations'
 
 /** How long a successful job stays visible before it disappears. */
 const AUTO_DISMISS_MS = 2500
@@ -63,9 +63,14 @@ export const useOperationsStore = defineStore('operations', () => {
     return listen<JobState>('fileop:update', (event) => upsert(event.payload))
   }
 
-  async function start(kind: JobKind, sources: string[], destDir?: string) {
+  async function start(
+    kind: JobKind,
+    sources: string[],
+    destDir?: string,
+    options?: JobOptions
+  ) {
     if (sources.length === 0) return
-    await api.startOperation(kind, sources, destDir)
+    await api.startOperation(kind, sources, destDir, options)
   }
 
   async function cancel(id: string) {

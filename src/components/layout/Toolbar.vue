@@ -9,6 +9,8 @@ const props = defineProps<{
   canGoForward: boolean
   canGoUp: boolean
   isFavorite: boolean
+  /** False inside an archive, where nothing can be written. */
+  canModify: boolean
   filter: string
   recursive: boolean
   searching: boolean
@@ -94,13 +96,18 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
     <button
       class="nav-btn"
       :class="{ starred: props.isFavorite }"
-      :disabled="!props.path"
+      :disabled="!props.path || !props.canModify"
       title="Add to favorites"
       @click="emit('toggle-favorite')"
     >
       {{ props.isFavorite ? '★' : '☆' }}
     </button>
-    <button class="nav-btn" :disabled="!props.path" title="New folder" @click="emit('new-folder')">
+    <button
+      class="nav-btn"
+      :disabled="!props.path || !props.canModify"
+      title="New folder"
+      @click="emit('new-folder')"
+    >
       ＋
     </button>
     <DensityControl />

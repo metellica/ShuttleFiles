@@ -14,6 +14,7 @@ import type {
 import type {
   ClipboardFiles,
   JobKind,
+  JobOptions,
   JobState,
   ShellMenuResult,
 } from '@/types/operations'
@@ -61,8 +62,24 @@ export const shellMenuList = (paths: string[]) =>
 // --- Background operations ---------------------------------------------------
 
 /** Queues the job and returns its id; progress arrives via `fileop:update`. */
-export const startOperation = (kind: JobKind, sources: string[], destDir?: string) =>
-  invoke<string>('start_operation', { kind, sources, destDir })
+export const startOperation = (
+  kind: JobKind,
+  sources: string[],
+  destDir?: string,
+  options?: JobOptions
+) => invoke<string>('start_operation', { kind, sources, destDir, options })
+
+// --- Archives ----------------------------------------------------------------
+
+/** Extensions that open as an archive, straight from the Rust dispatch table. */
+export const archiveExtensions = () => invoke<string[]>('archive_extensions')
+
+/** Extracts one member to a scratch folder and returns the file's path. */
+export const archiveOpenMember = (path: string) =>
+  invoke<string>('archive_open_member', { path })
+
+export const archiveSuggestName = (dir: string, sources: string[], extension: string) =>
+  invoke<string>('archive_suggest_name', { dir, sources, extension })
 
 export const cancelOperation = (id: string) => invoke<void>('cancel_operation', { id })
 

@@ -1,4 +1,12 @@
-export type JobKind = 'copy' | 'move' | 'delete'
+export type JobKind = 'copy' | 'move' | 'delete' | 'extract' | 'compress'
+
+/** Extra input for the archive jobs. */
+export interface JobOptions {
+  /** Compress: full path of the archive to create; its extension picks the format. */
+  archivePath: string
+  /** Compress: 0 stores, 9 compresses hardest. */
+  level?: number
+}
 
 export type JobStatus = 'scanning' | 'running' | 'completed' | 'failed' | 'cancelled'
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { confirm, message } from '@tauri-apps/plugin-dialog'
+import { confirm, message, open as openDialog } from '@tauri-apps/plugin-dialog'
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import type { FileEntry, HashAlgo } from '@/types/filesystem'
 import { ROOT } from '@/types/filesystem'
@@ -11,8 +11,10 @@ import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { usePlacesStore } from '@/stores/places'
 import { useOpenWithStore } from '@/stores/openWith'
+import { archiveRoot, isInsideArchive, splitArchive, useArchivesStore } from '@/stores/archives'
 import ContextMenu, { type MenuItem } from '@/components/common/ContextMenu.vue'
 import HashDialog from '@/components/common/HashDialog.vue'
+import ArchiveDialog from '@/components/common/ArchiveDialog.vue'
 import FastDial from '@/components/browser/FastDial.vue'
 import FileList from '@/components/browser/FileList.vue'
 
@@ -28,6 +30,7 @@ const clipboard = useClipboardStore()
 const ops = useOperationsStore()
 const places = usePlacesStore()
 const openWith = useOpenWithStore()
+const archives = useArchivesStore()
 const search = useFuzzySearch()
 
 const entries = ref<FileEntry[]>([])
@@ -38,19 +41,33 @@ const listRef = ref<InstanceType<typeof FileList> | null>(null)
 const ctx = ref({ visible: false, x: 0, y: 0, items: [] as MenuItem[] })
 const hashPaths = ref<string[]>([])
 const hashAlgos = ref<HashAlgo[]>(['md5', 'sha256'])
+const archiveSources = ref<string[] | null>(null)
+const archiveDir = ref('')
 
 /** Guards against an old, slow listing overwriting a newer one. */
 let requestId = 0
 
-const searchMode = computed(() => props.filter.trim().length > 0 && props.path !== ROOT)
+/** Inside an archive the listing is read-only and served by Rust's reader. */
+const insideArchive = computed(() => isInsideArchive(props.path))
+
+// The recursive finder walks the file system, which cannot descend into
+// an archive; there, filtering stays a plain match on the level shown.
+const searchMode = computed(
+  () => props.filter.trim().length > 0 && props.path !== ROOT && !insideArchive.value
+)
 
 /**
  * Filtering goes through the same Rust matcher the recursive finder
  * uses, so a query ranks identically whether or not it descends.
  */
-const visibleEntries = computed<FileEntry[]>(() =>
-  searchMode.value ? search.hits.value : entries.value
-)
+const visibleEntries = computed<FileEntry[]>(() => {
+  if (searchMode.value) return search.hits.value
+  const query = props.filter.trim().toLowerCase()
+  if (query && insideArchive.value) {
+    return entries.value.filter((e) => e.name.toLowerCase().includes(query))
+  }
+  return entries.value
+})
 
 async function load() {
   if (props.path === ROOT) {
@@ -82,7 +99,8 @@ watch(() => ops.completionTick, load)
 
 watch(
   [() => props.filter, () => props.recursive, () => props.path],
-  ([filter, recursive, path]) => search.schedule(path, filter, recursive),
+  ([filter, recursive, path]) =>
+    search.schedule(path, insideArchive.value ? '' : filter, recursive),
   { immediate: true }
 )
 
@@ -103,10 +121,34 @@ onUnmounted(() => search.dispose())
 function open(entry: FileEntry) {
   if (entry.isDir) {
     emit('navigate', entry.path)
-  } else {
-    // Text files go to the configured editor, everything else to the
-    // system default; see the open-with store.
-    reportOpenFailure(openWith.openEntry(entry), entry)
+    return
+  }
+  if (insideArchive.value) {
+    openArchiveMember(entry)
+    return
+  }
+  // An archive browses like a folder, so a double click steps into it
+  // rather than handing it to whatever has the association.
+  if (archives.isArchiveFile(entry)) {
+    emit('navigate', archiveRoot(entry.path))
+    return
+  }
+  // Text files go to the configured editor, everything else to the
+  // system default; see the open-with store.
+  reportOpenFailure(openWith.openEntry(entry), entry)
+}
+
+/**
+ * A member has no path on disk, so viewing it means extracting it to a
+ * scratch folder first and opening that copy. Edits to it are a copy's
+ * edits — the archive stays read-only.
+ */
+async function openArchiveMember(entry: FileEntry) {
+  try {
+    const extracted = await api.archiveOpenMember(entry.path)
+    reportOpenFailure(openWith.openEntry({ ...entry, path: extracted }), entry)
+  } catch (e) {
+    reportOpenFailure(Promise.reject(e), entry)
   }
 }
 
@@ -135,16 +177,18 @@ async function copyPathsToOsClipboard() {
 }
 
 async function doCopy() {
+  if (insideArchive.value) return
   await clipboard.copy(selection.value)
 }
 
 async function doCut() {
+  if (insideArchive.value) return
   await clipboard.cut(selection.value)
 }
 
 /** Reads the system clipboard, so files copied in Explorer paste here too. */
 async function doPaste() {
-  if (!props.path) return
+  if (!props.path || insideArchive.value) return
   try {
     const { paths, cut } = await clipboard.read()
     if (paths.length === 0) return
@@ -156,7 +200,7 @@ async function doPaste() {
 
 async function doDelete() {
   const targets = [...selection.value]
-  if (targets.length === 0) return
+  if (targets.length === 0 || insideArchive.value) return
   const label = targets.length === 1 ? targets[0] : `${targets.length} selected items`
   const ok = await confirm(`Permanently delete ${label}?`, {
     title: 'Delete',
@@ -172,17 +216,13 @@ async function doDelete() {
 
 async function doRename() {
   const entry = selectedEntries()[0]
-  if (!entry) return
+  if (!entry || insideArchive.value) return
   const name = await promptText('Rename to:', entry.name)
   if (!name || name === entry.name) return
   const parent = await api.parentPath(entry.path)
   if (!parent && parent !== '') return
-  const sep = props.path.includes('\\') ? '\\' : '/'
-  const target = props.path.endsWith(sep)
-    ? `${props.path}${name}`
-    : `${props.path}${sep}${name}`
   try {
-    await api.renameEntry(entry.path, target)
+    await api.renameEntry(entry.path, joinPath(props.path, name))
     await load()
   } catch (e) {
     error.value = String(e)
@@ -190,15 +230,11 @@ async function doRename() {
 }
 
 async function newFolder() {
-  if (!props.path) return
+  if (!props.path || insideArchive.value) return
   const name = await promptText('New folder name:', 'New folder')
   if (!name) return
-  const sep = props.path.includes('\\') ? '\\' : '/'
-  const target = props.path.endsWith(sep)
-    ? `${props.path}${name}`
-    : `${props.path}${sep}${name}`
   try {
-    await api.createDir(target)
+    await api.createDir(joinPath(props.path, name))
     await load()
   } catch (e) {
     error.value = String(e)
@@ -269,6 +305,117 @@ async function openInNewTab(entry: FileEntry) {
   }
 }
 
+/** Join a folder and a child name with whichever separator is in use. */
+function joinPath(dir: string, name: string): string {
+  const sep = dir.includes('\\') ? '\\' : '/'
+  return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`
+}
+
+/**
+ * Where "here" is for an extraction: the folder on screen, or — when
+ * the browser is inside an archive — the folder that holds it, since an
+ * archive cannot be written into.
+ */
+async function extractionBase(): Promise<string> {
+  if (!insideArchive.value) return props.path
+  const split = splitArchive(props.path)
+  if (!split) return props.path
+  return (await api.parentPath(split.archive)) ?? props.path
+}
+
+async function extractTo(sources: string[], dest: string) {
+  if (sources.length === 0 || !dest) return
+  try {
+    await ops.start('extract', sources, dest)
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+
+async function extractHere(sources: string[]) {
+  await extractTo(sources, await extractionBase())
+}
+
+/** "Extract to name\" — the archive's own name, so nothing spills out. */
+async function extractToNamedFolder(sources: string[], folder: string) {
+  await extractTo(sources, joinPath(await extractionBase(), folder))
+}
+
+async function extractToChosenFolder(sources: string[]) {
+  const picked = await openDialog({
+    title: 'Extract to',
+    directory: true,
+    multiple: false,
+    defaultPath: await extractionBase(),
+  })
+  if (typeof picked === 'string') await extractTo(sources, picked)
+}
+
+/** Archive name without its extension, for the "extract to" folder. */
+function archiveStem(name: string): string {
+  const lower = name.toLowerCase()
+  const ext = archives.extensions.find((e) => lower.endsWith(`.${e}`))
+  return ext ? name.slice(0, name.length - ext.length - 1) : name
+}
+
+/** One-click zip of the selection, next to it. */
+async function quickCompress(sources: string[]) {
+  if (sources.length === 0) return
+  try {
+    const name = await api.archiveSuggestName(props.path, sources, 'zip')
+    await ops.start('compress', sources, props.path, {
+      archivePath: joinPath(props.path, name),
+      level: 6,
+    })
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+
+/** The archive dialog needs the folder the new archive lands in. */
+function openArchiveDialog(sources: string[], dir?: string) {
+  archiveDir.value = dir ?? props.path
+  archiveSources.value = sources
+}
+
+/** Extract / compress entries for the clicked row. */
+function archiveMenu(entry: FileEntry): MenuItem[] {  const targets = selection.value.includes(entry.path) ? [...selection.value] : [entry.path]
+
+  if (insideArchive.value) {
+    return [
+      { separator: true },
+      { label: 'Extract Here', icon: '📤', action: () => extractHere(targets) },
+      { label: 'Extract To…', icon: '📂', action: () => extractToChosenFolder(targets) },
+    ]
+  }
+
+  const items: MenuItem[] = [{ separator: true }]
+  if (archives.isArchiveFile(entry)) {
+    items.push(
+      { label: 'Extract Here', icon: '📤', action: () => extractHere([entry.path]) },
+      {
+        label: `Extract to "${archiveStem(entry.name)}\\"`,
+        icon: '📁',
+        action: () => extractToNamedFolder([entry.path], archiveStem(entry.name)),
+      },
+      { label: 'Extract To…', icon: '📂', action: () => extractToChosenFolder([entry.path]) }
+    )
+  }
+  items.push(
+    {
+      label: targets.length > 1 ? `Add ${targets.length} Items to Zip` : 'Add to Zip',
+      icon: '🗜',
+      action: () => quickCompress(targets),
+    },
+    {
+      label: 'Add to Archive…',
+      icon: '📦',
+      action: () => openArchiveDialog(targets),
+    }
+  )
+  return items
+}
+
 async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   // The clipboard may have been filled by Explorer since the last check.
   await clipboard.refresh()
@@ -276,10 +423,13 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   // pointer ends up after travelling to the "More options" row.
   const anchor = { x: event.screenX, y: event.screenY }
   const many = selection.value.length
+  // Members live inside the archive file, so nothing that writes to the
+  // file system in place is offered for them.
+  const readOnly = insideArchive.value
   const items: MenuItem[] = entry
     ? [
         { label: 'Open', icon: '↩', action: () => open(entry) },
-        ...(openWith.programFor(entry)
+        ...(openWith.programFor(entry) || (!readOnly && archives.isArchiveFile(entry))
           ? [
               {
                 label: 'Open with System Default',
@@ -297,28 +447,33 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
               },
             ]
           : []),
+        ...archiveMenu(entry),
+        ...(readOnly
+          ? []
+          : [
+              { separator: true },
+              {
+                label: many > 1 ? `Copy (${many})` : 'Copy',
+                icon: '📋',
+                action: doCopy,
+              },
+              {
+                label: many > 1 ? `Cut (${many})` : 'Cut',
+                icon: '✂',
+                action: doCut,
+              },
+              {
+                label: 'Paste',
+                icon: '📥',
+                disabled: !clipboard.hasContent,
+                action: doPaste,
+              },
+              { separator: true },
+              { label: 'Rename', icon: '✏️', disabled: many !== 1, action: doRename },
+              { label: 'Delete', icon: '🗑', danger: true, action: doDelete },
+            ]),
         { separator: true },
-        {
-          label: many > 1 ? `Copy (${many})` : 'Copy',
-          icon: '📋',
-          action: doCopy,
-        },
-        {
-          label: many > 1 ? `Cut (${many})` : 'Cut',
-          icon: '✂',
-          action: doCut,
-        },
-        {
-          label: 'Paste',
-          icon: '📥',
-          disabled: !clipboard.hasContent,
-          action: doPaste,
-        },
-        { separator: true },
-        { label: 'Rename', icon: '✏️', disabled: many !== 1, action: doRename },
-        { label: 'Delete', icon: '🗑', danger: true, action: doDelete },
-        { separator: true },
-        ...(entry.isDir
+        ...(entry.isDir && !readOnly
           ? [
               {
                 label: 'Find in This Folder…',
@@ -329,8 +484,9 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
                 },
               },
             ]
-          : [hashMenu()]),
-        ...(entry.isDir
+          : []),
+        ...(!entry.isDir && !readOnly ? [hashMenu()] : []),
+        ...(entry.isDir && !readOnly
           ? [
               {
                 label: places.isFavorite(entry.path) ? 'Remove Favorite' : 'Add to Favorites',
@@ -340,19 +496,43 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
             ]
           : []),
         { label: 'Copy Path', icon: '🔗', action: copyPathsToOsClipboard },
-        {
-          label: 'Show in Explorer',
-          icon: '🗂',
-          action: () => revealItemInDir(entry.path).catch(console.error),
-        },
-        { separator: true },
-        {
-          label: 'More options',
-          icon: '⋯',
-          action: () => showShellMenu(selection.value, anchor),
-        },
+        ...(readOnly
+          ? []
+          : [
+              {
+                label: 'Show in Explorer',
+                icon: '🗂',
+                action: () => revealItemInDir(entry.path).catch(console.error),
+              },
+              { separator: true },
+              {
+                label: 'More options',
+                icon: '⋯',
+                action: () => showShellMenu(selection.value, anchor),
+              },
+            ]),
       ]
-    : [
+    : readOnly
+      ? [
+          {
+            label: splitArchive(props.path)?.inner ? 'Extract This Folder Here' : 'Extract All Here',
+            icon: '📤',
+            action: () => extractHere([props.path]),
+          },
+          {
+            label: 'Extract To…',
+            icon: '📂',
+            action: () => extractToChosenFolder([props.path]),
+          },
+          { separator: true },
+          { label: 'Refresh', icon: '⟳', action: load },
+          {
+            label: 'Filter This Folder… (Ctrl+F)',
+            icon: '🔤',
+            action: () => emit('find', false),
+          },
+        ]
+      : [
         {
           label: 'Paste',
           icon: '📥',
@@ -384,6 +564,12 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
           action: () => openPath(props.path).catch(console.error),
         },
         { separator: true },
+        {
+          label: 'Add Folder to Archive…',
+          icon: '📦',
+          action: async () =>
+            openArchiveDialog([props.path], (await api.parentPath(props.path)) ?? props.path),
+        },
         {
           label: 'More options',
           icon: '⋯',
@@ -433,6 +619,12 @@ defineExpose({
       :paths="hashPaths"
       :algos="hashAlgos"
       @close="hashPaths = []"
+    />
+    <ArchiveDialog
+      v-if="archiveSources"
+      :sources="archiveSources"
+      :dir="archiveDir"
+      @close="archiveSources = null"
     />
   </div>
 </template>

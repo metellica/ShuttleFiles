@@ -7,6 +7,7 @@ import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { useViewSettingsStore } from '@/stores/viewSettings'
 import { useOpenWithStore } from '@/stores/openWith'
+import { isInsideArchive, useArchivesStore } from '@/stores/archives'
 import { parentPath } from '@/composables/useTauri'
 import { ROOT } from '@/types/filesystem'
 import TabBar from '@/components/layout/TabBar.vue'
@@ -22,6 +23,7 @@ const clipboard = useClipboardStore()
 const ops = useOperationsStore()
 const view = useViewSettingsStore()
 const openWith = useOpenWithStore()
+const archives = useArchivesStore()
 
 let unlistenOps: UnlistenFn | null = null
 
@@ -32,6 +34,9 @@ const toolbarRef = ref<InstanceType<typeof Toolbar> | null>(null)
 const settingsOpen = ref(false)
 
 const currentPath = computed(() => tabs.activeTab?.path ?? ROOT)
+
+/** An archive's contents cannot be written to, so those actions go away. */
+const readOnlyLocation = computed(() => isInsideArchive(currentPath.value))
 
 // The query belongs to the tab, so switching tabs restores what that tab
 // was looking at and a new tab always starts clean.
@@ -62,7 +67,7 @@ function newTab(path = ROOT) {
 }
 
 function toggleFavorite() {
-  if (currentPath.value) places.toggleFavorite(currentPath.value)
+  if (currentPath.value && !readOnlyLocation.value) places.toggleFavorite(currentPath.value)
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -184,6 +189,7 @@ onMounted(async () => {
     tabs.restore().catch((e) => console.error('Cannot restore tabs:', e)),
     view.restore(),
     openWith.restore(),
+    archives.restore(),
   ])
   places.refresh().catch((e) => console.error('Cannot load places:', e))
   clipboard.refresh()
@@ -215,6 +221,7 @@ onUnmounted(() => {
       :can-go-forward="tabs.canGoForward"
       :can-go-up="upTarget !== null"
       :is-favorite="places.isFavorite(currentPath)"
+      :can-modify="!readOnlyLocation"
       :filter="filter"
       :recursive="recursive"
       :searching="stats.searching"

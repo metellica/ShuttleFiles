@@ -19,6 +19,32 @@ pub const SEP: char = '\\';
 #[cfg(not(windows))]
 pub const SEP: char = '/';
 
+/// Marks the boundary between an archive's own path and a path inside
+/// it: `D:\pkg.zip!\docs\readme.md`. Browsing an archive is otherwise
+/// indistinguishable from browsing a folder, which is the point.
+#[cfg(windows)]
+pub const ARCHIVE_MARK: &str = "!\\";
+#[cfg(not(windows))]
+pub const ARCHIVE_MARK: &str = "!/";
+
+/// Split a virtual path into the archive file and the path inside it.
+/// The inner part is empty at the archive's root.
+pub fn split_archive(path: &str) -> Option<(&str, &str)> {
+    let idx = path.find(ARCHIVE_MARK)?;
+    let inner = path[idx + ARCHIVE_MARK.len()..].trim_matches(['\\', '/']);
+    Some((&path[..idx], inner))
+}
+
+pub fn is_archive_path(path: &str) -> bool {
+    path.contains(ARCHIVE_MARK)
+}
+
+/// The virtual path of `inner` inside `archive`.
+pub fn archive_path(archive: &str, inner: &str) -> String {
+    format!("{}{}{}", archive, ARCHIVE_MARK, inner)
+}
+
+
 /// Whether `path` is the drive-list root. On Unix nothing is virtual.
 pub fn is_virtual_root(path: &str) -> bool {
     cfg!(windows) && path.is_empty()
@@ -56,6 +82,14 @@ pub fn is_unc(path: &str) -> bool {
 pub fn parent_of(path: &str) -> Option<String> {
     if is_virtual_root(path) {
         return None;
+    }
+    // Leaving an archive lands in the folder that holds it.
+    if let Some((archive, inner)) = split_archive(path) {
+        return Some(match inner.rfind(SEP) {
+            Some(i) => archive_path(archive, &inner[..i]),
+            None if inner.is_empty() => return parent_of(archive),
+            None => archive_path(archive, ""),
+        });
     }
     if is_filesystem_root(path) {
         return if cfg!(windows) {
@@ -97,6 +131,13 @@ pub fn join(dir: &str, name: &str) -> String {
 pub fn display_name(path: &str) -> String {
     if is_virtual_root(path) {
         return "This PC".to_string();
+    }
+    if let Some((archive, inner)) = split_archive(path) {
+        return if inner.is_empty() {
+            display_name(archive)
+        } else {
+            inner.rsplit(SEP).next().unwrap_or(inner).to_string()
+        };
     }
     if cfg!(windows) && is_filesystem_root(path) && !is_unc(path) {
         return path.trim_end_matches(['\\', '/']).to_string();
@@ -141,8 +182,13 @@ pub fn normalize_input(input: &str) -> String {
         if s.len() == 2 && s.as_bytes()[1] == b':' {
             s.push('\\');
         }
-        // Trailing separators are noise except at a root.
-        if s.len() > 3 && s.ends_with('\\') && !is_filesystem_root(&s) {
+        // Trailing separators are noise except at a root — or at an
+        // archive's root, where the separator is part of the marker.
+        if s.len() > 3
+            && s.ends_with('\\')
+            && !is_filesystem_root(&s)
+            && !s.ends_with(ARCHIVE_MARK)
+        {
             s = s.trim_end_matches('\\').to_string();
         }
     }
@@ -248,5 +294,32 @@ mod tests {
     #[test]
     fn unknown_vars_are_preserved() {
         assert_eq!(expand_vars("%NOPE_NOT_SET%"), "%NOPE_NOT_SET%");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn archive_paths_navigate_like_folders() {
+        let root = archive_path("D:\\pkg.zip", "");
+        assert_eq!(root, "D:\\pkg.zip!\\");
+        assert_eq!(split_archive(&root), Some(("D:\\pkg.zip", "")));
+        assert_eq!(display_name(&root), "pkg.zip");
+
+        let inner = archive_path("D:\\pkg.zip", "docs\\api");
+        assert_eq!(split_archive(&inner), Some(("D:\\pkg.zip", "docs\\api")));
+        assert_eq!(display_name(&inner), "api");
+        assert_eq!(parent_of(&inner).as_deref(), Some("D:\\pkg.zip!\\docs"));
+        assert_eq!(
+            parent_of("D:\\pkg.zip!\\docs").as_deref(),
+            Some("D:\\pkg.zip!\\")
+        );
+        // Leaving the archive lands in the folder that holds it.
+        assert_eq!(parent_of(&root).as_deref(), Some("D:\\"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn an_archive_root_keeps_its_trailing_separator() {
+        assert_eq!(normalize_input("D:/pkg.zip!/"), "D:\\pkg.zip!\\");
+        assert_eq!(normalize_input("D:/pkg.zip!/docs/"), "D:\\pkg.zip!\\docs");
     }
 }

@@ -46,6 +46,13 @@ work. Remaining: remote shares (R4).
 - 🧩 **Third-party context menus** — "More options" opens the real Windows shell
   menu, so 7-Zip, WinMerge, TortoiseGit, PowerToys and everything else you have
   installed work exactly as they do in Explorer; hosted out of process
+- 🗜 **Archives built in** — ZIP, 7z and TAR (`.gz` / `.bz2` / `.xz` / `.zst`,
+  plus the bare streams) open by double click and browse level by level like a
+  folder; Extract Here / Extract to *name*\ / Extract To… and Add to Zip / Add
+  to Archive… run as cancellable jobs with the same progress bar as a copy.
+  Backed by `zip` (deflate through `zlib-rs`), `sevenz-rust2` (multi-threaded
+  LZMA2) and `tar` over `flate2` / `bzip2` / `liblzma` / `zstd`, all streaming —
+  no temp copy of the archive, no shelling out to 7-Zip
 
 ## Not implemented yet
 
@@ -87,7 +94,7 @@ npx tauri build
 ```bash
 npm run type-check                 # vue-tsc
 npm run build-only                 # vite build
-cd src-tauri && cargo test         # path model, clipboard, ops engine, IPC, shell menu
+cd src-tauri && cargo test         # path model, clipboard, ops engine, archives, IPC, shell menu
 
 # Benchmarks (write hundreds of MB, excluded from the normal run)
 cd src-tauri && cargo test --release bench_ -- --ignored --nocapture
@@ -107,15 +114,16 @@ ShuttleFiles/
 ├── src/                       # Vue 3 frontend
 │   ├── components/
 │   │   ├── browser/           # FileBrowser, FileList, FastDial, PathBar
-│   │   ├── common/            # ContextMenu, PromptDialog
+│   │   ├── common/            # ContextMenu, PromptDialog, HashDialog, SettingsDialog, ArchiveDialog
 │   │   └── layout/            # TabBar, Toolbar, OperationBar, DensityControl
 │   ├── composables/           # Tauri IPC wrappers, formatting, prompt
-│   ├── stores/                # Pinia state (tabs, clipboard, places, operations, view)
+│   ├── stores/                # Pinia state (tabs, clipboard, places, operations, view, archives)
 │   └── types/                 # TypeScript interfaces
 ├── src-tauri/                 # Rust backend
 │   ├── app-icon.svg           # Icon source; regenerate with `npx tauri icon`
 │   ├── src/
 │   │   ├── bin/shellmenu.rs   # Out-of-process host for shell context menus
+│   │   ├── archive/           # zip / 7z / tar backends: list, extract, create
 │   │   ├── fs/                # path model, listing, drives
 │   │   ├── ops/               # background job registry + copy/move/delete engine
 │   │   ├── config/            # JSON store, favorites & history

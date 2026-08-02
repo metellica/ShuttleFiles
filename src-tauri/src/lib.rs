@@ -1,4 +1,5 @@
 pub mod cancel;
+pub mod archive;
 pub mod commands;
 pub mod config;
 pub mod error;
@@ -49,6 +50,9 @@ pub fn run() {
             commands::clipboard::clipboard_has_files,
             commands::shellmenu::shell_menu_show,
             commands::shellmenu::shell_menu_list,
+            commands::archive::archive_extensions,
+            commands::archive::archive_open_member,
+            commands::archive::archive_suggest_name,
             commands::operations::start_operation,
             commands::operations::cancel_operation,
             commands::operations::list_operations,

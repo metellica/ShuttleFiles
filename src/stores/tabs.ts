@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { ROOT, type TabSnapshot } from '@/types/filesystem'
 import { loadTabs, recordVisit, saveTabs } from '@/composables/useTauri'
+import { isInsideArchive, splitArchive } from '@/stores/archives'
 
 /**
  * Tab locking, modelled on Total Commander:
@@ -44,6 +45,10 @@ export function hasStrayed(tab: Tab): boolean {
 
 function titleFor(path: string): string {
   if (path === ROOT) return 'This PC'
+  // An archive's root ends with the marker, whose separator would
+  // otherwise be trimmed into a stray "!".
+  const inside = splitArchive(path)
+  if (inside && !inside.inner) return titleFor(inside.archive)
   const trimmed = path.replace(/[\\/]+$/, '')
   const idx = Math.max(trimmed.lastIndexOf('\\'), trimmed.lastIndexOf('/'))
   return idx >= 0 ? trimmed.slice(idx + 1) || trimmed : trimmed
@@ -216,7 +221,9 @@ export const useTabsStore = defineStore('tabs', () => {
     // next one would silently hide most of what is there.
     tab.filter = ''
     persist()
-    if (path !== ROOT) {
+    // Paths inside an archive are not places on disk, so they stay out
+    // of the visit history the fast dial ranks.
+    if (path !== ROOT && !isInsideArchive(path)) {
       recordVisit(path).catch(() => {
         // History is a convenience; a failed write must not break navigation.
       })

@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod clipboard;
 pub mod filesystem;
 pub mod find;

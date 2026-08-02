@@ -19,6 +19,8 @@ pub enum JobKind {
     Copy,
     Move,
     Delete,
+    Extract,
+    Compress,
 }
 
 impl JobKind {
@@ -27,8 +29,24 @@ impl JobKind {
             JobKind::Copy => "Copying",
             JobKind::Move => "Moving",
             JobKind::Delete => "Deleting",
+            JobKind::Extract => "Extracting",
+            JobKind::Compress => "Compressing",
         }
     }
+}
+
+/// Extra input for the archive jobs, which need more than a source list
+/// and a destination folder.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobOptions {
+    /// Compress: full path of the archive to create. Its extension
+    /// picks the format.
+    #[serde(default)]
+    pub archive_path: String,
+    /// Compress: 0 stores, 9 compresses hardest.
+    #[serde(default)]
+    pub level: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

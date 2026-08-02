@@ -21,8 +21,9 @@ use std::time::{Duration, Instant};
 use jwalk::WalkDirGeneric;
 use tauri::{AppHandle, Emitter, Runtime};
 
+use crate::archive;
 use crate::error::{AppError, AppResult};
-use crate::ops::{Job, JobKind, JobStatus, OpsRegistry};
+use crate::ops::{Job, JobKind, JobOptions, JobStatus, OpsRegistry};
 
 /// A busy copy would otherwise emit thousands of events per second and
 /// drown the WebView in IPC traffic.
@@ -933,7 +934,88 @@ fn execute(
         }
         JobKind::Copy => run_transfer(plans, Path::new(dest_dir), false, progress),
         JobKind::Move => run_transfer(plans, Path::new(dest_dir), true, progress),
+        // Handled before the file-tree scan, which cannot walk into an
+        // archive and would only measure the wrong thing.
+        JobKind::Extract | JobKind::Compress => unreachable!(),
     }
+}
+
+// --- Archive jobs -----------------------------------------------------------
+
+/// The archive the extraction reads from, and the members picked inside
+/// it. A source without the archive marker means "everything".
+fn extraction_target(sources: &[String]) -> AppResult<(PathBuf, Vec<String>)> {
+    let mut archive: Option<&str> = None;
+    let mut members = Vec::new();
+
+    for source in sources {
+        let (file, inner) = match crate::fs::path::split_archive(source) {
+            Some((file, inner)) => (file, inner),
+            None => (source.as_str(), ""),
+        };
+        match archive {
+            Some(existing) if existing != file => {
+                return Err(AppError::InvalidPath(
+                    "Selection spans more than one archive".into(),
+                ))
+            }
+            _ => archive = Some(file),
+        }
+        if !inner.is_empty() {
+            members.push(inner.to_string());
+        }
+    }
+
+    let archive = archive
+        .ok_or_else(|| AppError::InvalidPath("Nothing to extract".into()))?
+        .to_string();
+    Ok((PathBuf::from(archive), members))
+}
+
+fn run_extract<R: Runtime>(
+    sources: &[String],
+    dest_dir: &str,
+    reporter: &Reporter<R>,
+) -> AppResult<()> {
+    let (archive, members) = extraction_target(sources)?;
+    let selection = archive::Selection::new(members);
+    let (files, bytes) = archive::measure(&archive, &selection)?;
+    start_running(reporter, files, bytes);
+
+    // Extracting into a folder that already holds a same-named tree
+    // must not silently merge with it.
+    let dest = Path::new(dest_dir);
+    archive::extract(&archive, &selection, dest, reporter)
+}
+
+fn run_compress<R: Runtime>(
+    sources: &[String],
+    options: &JobOptions,
+    reporter: &Reporter<R>,
+) -> AppResult<()> {
+    let format = archive::detect(&options.archive_path).ok_or_else(|| {
+        AppError::InvalidPath(format!("Unknown archive type: {}", options.archive_path))
+    })?;
+    let paths: Vec<PathBuf> = sources.iter().map(PathBuf::from).collect();
+    let members = archive::collect_members(&paths, reporter)?;
+
+    let files = members.iter().filter(|m| !m.is_dir).count() as u64;
+    let bytes = members.iter().map(|m| m.size).sum();
+    start_running(reporter, files, bytes);
+
+    // Never clobber an archive that is already there.
+    let target = archive::unique_path(Path::new(&options.archive_path));
+    archive::create(&target, format, &members, options.level, reporter)
+}
+
+/// Publish the totals the scan produced and switch the job to Running.
+fn start_running<R: Runtime>(reporter: &Reporter<R>, files: u64, bytes: u64) {
+    reporter.mutate(|s| {
+        s.total_files = files;
+        s.total_bytes = bytes;
+        s.status = JobStatus::Running;
+    });
+    reporter.flush(true);
 }
 
 /// Queue a job and return its id immediately; the work happens on a
@@ -949,6 +1031,7 @@ pub fn spawn<R: Runtime>(
     kind: JobKind,
     sources: Vec<String>,
     dest_dir: String,
+    options: JobOptions,
 ) -> String {
     let job = registry.create(kind, dest_dir.clone());
     let id = job.snapshot().id;
@@ -960,15 +1043,15 @@ pub fn spawn<R: Runtime>(
         reporter.flush(true);
 
         let outcome = (|| -> AppResult<()> {
+            match kind {
+                JobKind::Extract => return run_extract(&sources, &dest_dir, &reporter),
+                JobKind::Compress => return run_compress(&sources, &options, &reporter),
+                _ => {}
+            }
             let plans = scan_sources(&sources, &reporter)?;
             let total_files: u64 = plans.iter().map(|p| p.files).sum();
             let total_bytes: u64 = plans.iter().map(|p| p.bytes).sum();
-            reporter.mutate(|s| {
-                s.total_files = total_files;
-                s.total_bytes = total_bytes;
-                s.status = JobStatus::Running;
-            });
-            reporter.flush(true);
+            start_running(&reporter, total_files, total_bytes);
             execute(kind, &plans, &dest_dir, &reporter)
         })();
 
