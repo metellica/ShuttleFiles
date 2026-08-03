@@ -53,7 +53,10 @@ work. Remaining: remote shares (R4).
   to Archive… run as cancellable jobs with the same progress bar as a copy.
   Backed by `zip` (deflate through `zlib-rs`), `sevenz-rust2` (multi-threaded
   LZMA2) and `tar` over `flate2` / `bzip2` / `liblzma` / `zstd`, all streaming —
-  no temp copy of the archive, no shelling out to 7-Zip
+  no temp copy of the archive, no shelling out to 7-Zip. Opening a *file inside*
+  an archive is the one case that touches disk: it is extracted to
+  `%TEMP%\ShuttleFiles\<uuid>\` for the viewer, and folders older than a day are
+  swept at the next start
 
 ## Not implemented yet
 

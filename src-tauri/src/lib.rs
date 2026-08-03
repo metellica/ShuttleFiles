@@ -14,6 +14,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|_app| {
+            // Members opened for viewing are extracted to a scratch
+            // folder nothing can delete while the viewer may still hold
+            // it. Sweeping earlier runs' leftovers at start keeps the
+            // temp directory from growing without bound.
+            std::thread::spawn(archive::clean_scratch);
+            Ok(())
+        })
         .manage(ops::OpsRegistry::default())
         .manage(cancel::SearchCancels::default())
         .manage(cancel::HashCancels::default())

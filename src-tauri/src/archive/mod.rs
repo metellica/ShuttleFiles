@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -412,12 +412,66 @@ pub fn extract(
     }
 }
 
+/// Where members extracted only to be opened are put. One folder, so
+/// what a run leaves behind can be found and cleared by a later one.
+fn scratch_root() -> PathBuf {
+    std::env::temp_dir().join("ShuttleFiles")
+}
+
+/// Age past which a scratch folder is assumed to belong to a finished
+/// run rather than to a file someone still has open.
+const SCRATCH_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Drop scratch folders left by earlier runs. Nothing tells us when the
+/// program a member was handed to is done with it, so age is the only
+/// safe signal — and a second instance running now must not delete what
+/// the first one just extracted. Errors are ignored: a file still
+/// locked is simply collected on a later start.
+pub fn clean_scratch() {
+    clean_scratch_in(&scratch_root(), SCRATCH_MAX_AGE);
+}
+
+fn clean_scratch_in(root: &Path, max_age: Duration) {
+    // A junction in place of the root would make `read_dir` enumerate
+    // somewhere else entirely, and the sweep below would delete what it
+    // found there. Only a real directory is ever swept.
+    match std::fs::symlink_metadata(root) {
+        Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {}
+        _ => return,
+    }
+
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        // Only this module's own scratch folders, so a root shared with
+        // something else — or an entry planted in it — is left alone.
+        if uuid::Uuid::parse_str(&entry.file_name().to_string_lossy()).is_err() {
+            continue;
+        }
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        let stale = meta
+            .modified()
+            .ok()
+            .and_then(|m| m.elapsed().ok())
+            .map(|age| age >= max_age)
+            .unwrap_or(false);
+        if !stale {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(entry.path());
+    }
+}
+
 /// Extract one member to a scratch folder and return the file's path,
 /// which is how a file inside an archive is opened for viewing.
 pub fn extract_to_temp(archive: &Path, inner: &str) -> AppResult<PathBuf> {
-    let dest = std::env::temp_dir()
-        .join("ShuttleFiles")
-        .join(uuid::Uuid::new_v4().to_string());
+    let dest = scratch_root().join(uuid::Uuid::new_v4().to_string());
     extract(
         archive,
         &Selection::new(vec![inner.to_string()]),
@@ -800,6 +854,76 @@ mod tests {
         let dest = tmp.path().join("out");
         extract(&archive, &Selection::all(), &dest, &counter).unwrap();
         assert_eq!(std::fs::read(dest.join("notes.txt")).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn stale_scratch_folders_are_swept_and_fresh_ones_kept() {
+        let tmp = TempDir::new();
+        let root = tmp.path().join("scratch");
+        let job = root.join(uuid::Uuid::new_v4().to_string());
+        let member = job.join("notes.txt");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(&member, b"hello").unwrap();
+
+        clean_scratch_in(&root, Duration::from_secs(3600));
+        assert!(member.exists(), "a folder this run may still be using");
+
+        clean_scratch_in(&root, Duration::ZERO);
+        assert!(!job.exists());
+        assert!(root.exists(), "the root itself stays");
+    }
+
+    /// The root lives in the shared temp directory, so the sweep must
+    /// touch nothing but the uuid folders this module creates there.
+    #[test]
+    fn sweeping_leaves_anything_that_is_not_our_scratch_folder() {
+        let tmp = TempDir::new();
+        let root = tmp.path().join("scratch");
+        let other_dir = root.join("someone-elses");
+        std::fs::create_dir_all(&other_dir).unwrap();
+        let loose_file = root.join("stray.txt");
+        std::fs::write(&loose_file, b"x").unwrap();
+
+        clean_scratch_in(&root, Duration::ZERO);
+
+        assert!(other_dir.exists());
+        assert!(loose_file.exists());
+    }
+
+    /// A junction in place of the root would otherwise have `read_dir`
+    /// enumerate — and the sweep delete from — its target.
+    #[cfg(windows)]
+    #[test]
+    fn a_scratch_root_that_is_a_junction_is_not_swept() {
+        let tmp = TempDir::new();
+        let target = tmp.path().join("target");
+        let planted = target.join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&planted).unwrap();
+        std::fs::write(planted.join("keep.txt"), b"keep").unwrap();
+
+        let root = tmp.path().join("scratch");
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&root)
+            .arg(&target)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !made {
+            return;
+        }
+
+        clean_scratch_in(&root, Duration::ZERO);
+
+        assert!(planted.exists(), "the junction's target is untouched");
+    }
+
+    #[test]
+    fn sweeping_a_scratch_root_that_was_never_created_is_not_an_error() {
+        let tmp = TempDir::new();
+        clean_scratch_in(&tmp.path().join("absent"), Duration::ZERO);
     }
 
     #[test]
