@@ -140,6 +140,19 @@ function open(entry: FileEntry) {
 }
 
 /**
+ * Whether the default action hands the file to the configured editor
+ * rather than to a folder view or the association. The menu then says
+ * "Edit", which is both what happens and what tells the row apart from
+ * "Open with System Default" underneath it.
+ */
+function opensForEditing(entry: FileEntry): boolean {
+  if (entry.isDir) return false
+  // Not inside one already: an archive browses like a folder.
+  if (!insideArchive.value && archives.isArchiveFile(entry)) return false
+  return openWith.programFor(entry) !== undefined
+}
+
+/**
  * A member has no path on disk, so viewing it means extracting it to a
  * scratch folder first and opening that copy. Edits to it are a copy's
  * edits — the archive stays read-only.
@@ -427,9 +440,14 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   // Members live inside the archive file, so nothing that writes to the
   // file system in place is offered for them.
   const readOnly = insideArchive.value
+  const editing = !!entry && opensForEditing(entry)
   const items: MenuItem[] = entry
     ? [
-        { label: 'Open', icon: '↩', action: () => open(entry) },
+        {
+          label: editing ? 'Edit' : 'Open',
+          icon: editing ? '✏️' : '↩',
+          action: () => open(entry),
+        },
         ...(openWith.programFor(entry) || (!readOnly && archives.isArchiveFile(entry))
           ? [
               {
