@@ -1,8 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { openPath } from '@tauri-apps/plugin-opener'
 import type { FileEntry, OpenWithSettings } from '@/types/filesystem'
-import { defaultOpenWith, loadOpenWith, saveOpenWith } from '@/composables/useTauri'
+import {
+  defaultOpenWith,
+  loadOpenWith,
+  openEntryPath,
+  saveOpenWith,
+} from '@/composables/useTauri'
 
 /**
  * The program text files open with, and which extensions count as text.
@@ -57,7 +61,7 @@ export const useOpenWithStore = defineStore('openWith', () => {
   }
 
   function openEntry(entry: FileEntry): Promise<void> {
-    return openPath(entry.path, programFor(entry))
+    return openEntryPath(entry.path, programFor(entry))
   }
 
   return {

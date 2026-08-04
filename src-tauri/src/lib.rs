@@ -49,6 +49,7 @@ pub fn run() {
             commands::openwith::load_open_with,
             commands::openwith::save_open_with,
             commands::openwith::default_open_with,
+            commands::openwith::open_entry,
             commands::find::fuzzy_find,
             commands::find::cancel_search,
             commands::find::start_hash,

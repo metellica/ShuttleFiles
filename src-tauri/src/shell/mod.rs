@@ -12,6 +12,11 @@
 //!   out of process on purpose: the shell loads those extensions' DLLs
 //!   into whoever asks for the menu, and a faulty one must not be able
 //!   to take the browser down with it.
+//! * **Opening files** — [`launch`] runs the associated program with
+//!   the item's own folder as the working directory, the way Explorer
+//!   does, so scripts that reference their siblings by relative path
+//!   still work.
 
 pub mod clipboard;
+pub mod launch;
 pub mod menu;

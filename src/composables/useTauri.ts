@@ -126,6 +126,16 @@ export const saveOpenWith = (settings: OpenWithSettings) =>
 
 export const defaultOpenWith = () => invoke<OpenWithSettings>('default_open_with')
 
+/**
+ * Launches a file or folder, with `program` or the system default.
+ *
+ * Not the opener plugin: the handler has to start in the item's own
+ * folder, or a script that calls its neighbours by relative path cannot
+ * find them.
+ */
+export const openEntryPath = (path: string, program?: string) =>
+  invoke<void>('open_entry', { path, program: program ?? null })
+
 // --- Fuzzy search ------------------------------------------------------------
 
 /**

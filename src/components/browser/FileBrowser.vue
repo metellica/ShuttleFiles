@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { confirm, message, open as openDialog } from '@tauri-apps/plugin-dialog'
-import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import type { FileEntry, HashAlgo } from '@/types/filesystem'
 import { ROOT } from '@/types/filesystem'
 import * as api from '@/composables/useTauri'
@@ -155,7 +155,7 @@ async function openArchiveMember(entry: FileEntry) {
 
 /** Escape hatch for a file the configured editor is the wrong tool for. */
 function openWithSystemDefault(entry: FileEntry) {
-  reportOpenFailure(openPath(entry.path), entry)
+  reportOpenFailure(api.openEntryPath(entry.path), entry)
 }
 
 /**
@@ -562,7 +562,7 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
         {
           label: 'Open in Explorer',
           icon: '🗂',
-          action: () => openPath(props.path).catch(console.error),
+          action: () => api.openEntryPath(props.path).catch(console.error),
         },
         { separator: true },
         {

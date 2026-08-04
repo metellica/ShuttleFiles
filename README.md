@@ -48,7 +48,9 @@ work. Remaining: remote shares (R4).
 - 📝 **Editor for text files** — pick one program in ⚙ Settings and every text
   extension opens with it, on double click and from the context menu, without
   touching Windows' per-extension associations; the extension list is editable
-  and "Open with System Default" stays one click away
+  and "Open with System Default" stays one click away. Every open starts the
+  program in the item's own folder, like Explorer, so a `.bat` that calls its
+  neighbours by relative path works
 - 🧩 **Third-party context menus** — "More options" opens the real Windows shell
   menu, so 7-Zip, WinMerge, TortoiseGit, PowerToys and everything else you have
   installed work exactly as they do in Explorer; hosted out of process
