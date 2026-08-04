@@ -22,6 +22,11 @@ work. Remaining: remote shares (R4).
   Paste & Go, `%ENV%` / `~` expansion, `/` → `\` normalisation, UNC input
 - 📋 **Details view** — sortable Name / Size / Type / Modified, Ctrl+click and
   Shift+click multi-select, hidden files dimmed, live filter box
+- 🔎 **Fuzzy finder** — `Ctrl+F` filters the current folder, `Ctrl+Shift+F`
+  descends the whole tree with the same query and ranking; fzy-style scoring
+  with match highlighting, every whitespace-separated term must match, smart
+  case, and a term containing `*` or `?` is taken as a wildcard, so `*.txt`
+  means what it does in a shell
 - 🔍 **Adjustable row size** — Small / Medium / Large presets plus stepless
   zoom from 75 % to 250 % via Ctrl+wheel, `Ctrl+=` / `Ctrl+-` or the slider;
   row height, text, icons and column widths all scale together and the
@@ -137,7 +142,7 @@ ShuttleFiles/
 │   │   ├── browser/           # FileBrowser, FileList, FastDial, PathBar
 │   │   ├── common/            # ContextMenu, PromptDialog, HashDialog, SettingsDialog, ArchiveDialog
 │   │   └── layout/            # TabBar, Toolbar, OperationBar, DensityControl
-│   ├── composables/           # Tauri IPC wrappers, formatting, prompt
+│   ├── composables/           # Tauri IPC wrappers, formatting, prompt, search, name matching
 │   ├── stores/                # Pinia state (tabs, clipboard, places, operations, view, archives)
 │   └── types/                 # TypeScript interfaces
 ├── src-tauri/                 # Rust backend
@@ -145,7 +150,7 @@ ShuttleFiles/
 │   ├── src/
 │   │   ├── bin/shellmenu.rs   # Out-of-process host for shell context menus
 │   │   ├── archive/           # zip / 7z / tar backends: list, extract, create
-│   │   ├── fs/                # path model, listing, drives
+│   │   ├── fs/                # path model, listing, drives, fuzzy/wildcard search, hashing
 │   │   ├── ops/               # background job registry + copy/move/delete engine
 │   │   ├── config/            # JSON store, favorites & history
 │   │   ├── shell/             # native Win32 integration (clipboard, menu bridge)
@@ -275,6 +280,7 @@ drives and renders as the fast dial.
 | `Alt+←` / `Alt+→` / `Alt+↑` | Back / Forward / Up |
 | `Backspace` | Up one folder |
 | `Ctrl+L` | Edit address bar |
+| `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / find in folder and below (`*.txt` wildcards supported) |
 | `F5` | Refresh |
 | `Ctrl+A` | Select all |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / Cut / Paste (system clipboard — works with Explorer) |

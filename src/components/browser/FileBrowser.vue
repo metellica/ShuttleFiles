@@ -7,6 +7,7 @@ import { ROOT } from '@/types/filesystem'
 import * as api from '@/composables/useTauri'
 import { promptText } from '@/composables/usePrompt'
 import { useFuzzySearch } from '@/composables/useFuzzySearch'
+import { matchesName } from '@/composables/useNameMatch'
 import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { usePlacesStore } from '@/stores/places'
@@ -62,9 +63,9 @@ const searchMode = computed(
  */
 const visibleEntries = computed<FileEntry[]>(() => {
   if (searchMode.value) return search.hits.value
-  const query = props.filter.trim().toLowerCase()
+  const query = props.filter.trim()
   if (query && insideArchive.value) {
-    return entries.value.filter((e) => e.name.toLowerCase().includes(query))
+    return entries.value.filter((e) => matchesName(e.name, query))
   }
   return entries.value
 })

@@ -10,6 +10,10 @@
 //! the user almost always meant. The optimal alignment is found with a
 //! small dynamic program rather than by taking the leftmost match, so
 //! `mkdir` scores higher against `make_dir` than against `my_kind_of_dir`.
+//!
+//! A term containing `*` or `?` escapes fuzzy matching entirely and is
+//! treated as a shell-style wildcard anchored to the whole candidate, so
+//! `*.txt` means what everyone expects it to mean.
 
 /// Unreachable score used as "no match here"; halved so adding a gap
 /// penalty cannot overflow.
@@ -39,6 +43,42 @@ struct Term {
     /// Smart case, as in fd and fzf: a lowercase term ignores case, a term
     /// with any uppercase is taken literally.
     case_sensitive: bool,
+    /// A term containing `*` or `?` is a wildcard pattern anchored to the
+    /// whole candidate rather than a fuzzy subsequence, because someone
+    /// typing `*.txt` means the shell glob, not "these six characters,
+    /// scattered". Without this, `*` matches nothing at all: no filename
+    /// contains one.
+    glob: bool,
+    /// The term's non-wildcard characters, used as a cheap necessary
+    /// condition before running the matcher.
+    literals: Vec<char>,
+}
+
+impl Term {
+    fn new(text: &str) -> Self {
+        let chars: Vec<char> = text.chars().collect();
+        let glob = chars.iter().any(|&c| c == '*' || c == '?');
+        Term {
+            case_sensitive: chars.iter().any(|c| c.is_uppercase()),
+            literals: if glob {
+                chars.iter().copied().filter(|&c| c != '*' && c != '?').collect()
+            } else {
+                Vec::new()
+            },
+            glob,
+            chars,
+        }
+    }
+
+    /// Characters that must appear, in order, for the term to have any
+    /// chance of matching.
+    fn required(&self) -> &[char] {
+        if self.glob {
+            &self.literals
+        } else {
+            &self.chars
+        }
+    }
 }
 
 pub struct Query {
@@ -49,10 +89,7 @@ impl Query {
     pub fn new(input: &str) -> Self {
         let terms = input
             .split_whitespace()
-            .map(|t| Term {
-                case_sensitive: t.chars().any(|c| c.is_uppercase()),
-                chars: t.chars().collect(),
-            })
+            .map(Term::new)
             .filter(|t| !t.chars.is_empty())
             .collect();
         Query { terms }
@@ -66,7 +103,7 @@ impl Query {
     /// candidates before paying for the dynamic program.
     pub fn is_candidate(&self, haystack: &str) -> bool {
         let chars: Vec<char> = haystack.chars().collect();
-        self.terms.iter().all(|t| is_subsequence(t, &chars))
+        self.terms.iter().all(|t| is_subsequence(t.required(), t.case_sensitive, &chars))
     }
 
     /// Score `haystack`, or `None` when it does not match every term.
@@ -81,7 +118,11 @@ impl Query {
         let mut total = 0i32;
         let mut positions = Vec::new();
         for term in &self.terms {
-            let (score, pos) = score_term(term, &chars, &bonus)?;
+            let (score, pos) = if term.glob {
+                score_glob(term, &chars, &bonus)?
+            } else {
+                score_term(term, &chars, &bonus)?
+            };
             total = total.saturating_add(score);
             positions.extend(pos);
         }
@@ -100,11 +141,77 @@ fn eq(a: char, b: char, case_sensitive: bool) -> bool {
     }
 }
 
-fn is_subsequence(term: &Term, haystack: &[char]) -> bool {
+fn is_subsequence(needle: &[char], case_sensitive: bool, haystack: &[char]) -> bool {
     let mut it = haystack.iter();
-    term.chars
+    needle
         .iter()
-        .all(|&n| it.any(|&h| eq(n, h, term.case_sensitive)))
+        .all(|&n| it.any(|&h| eq(n, h, case_sensitive)))
+}
+
+/// Match a wildcard term against the whole candidate, `*` standing for any
+/// run of characters (path separators included, so `*.txt` finds a nested
+/// file in a recursive search) and `?` for exactly one.
+///
+/// Iterative with a single backtrack point, so a pattern like `*a*b*` costs
+/// no more than the greedy scan it looks like; the returned positions are
+/// the characters the pattern pinned down, for highlighting.
+fn glob_match(term: &Term, haystack: &[char]) -> Option<Vec<usize>> {
+    let pattern = &term.chars;
+    let (mut p, mut h) = (0usize, 0usize);
+    // Where to resume if the current `*` turns out to have consumed too
+    // little, together with how much of the match was recorded by then.
+    let mut star: Option<(usize, usize, usize)> = None;
+    let mut positions: Vec<usize> = Vec::with_capacity(term.literals.len());
+
+    while h < haystack.len() {
+        match pattern.get(p) {
+            Some(&'*') => {
+                star = Some((p, h, positions.len()));
+                p += 1;
+            }
+            Some(&'?') => {
+                positions.push(h);
+                p += 1;
+                h += 1;
+            }
+            Some(&c) if eq(c, haystack[h], term.case_sensitive) => {
+                positions.push(h);
+                p += 1;
+                h += 1;
+            }
+            _ => {
+                let (star_p, star_h, kept) = star?;
+                positions.truncate(kept);
+                p = star_p + 1;
+                h = star_h + 1;
+                star = Some((star_p, h, kept));
+            }
+        }
+    }
+
+    // Only trailing stars may still be unconsumed.
+    while pattern.get(p) == Some(&'*') {
+        p += 1;
+    }
+    (p == pattern.len()).then_some(positions)
+}
+
+/// Rank a wildcard match by where it landed, not by how much it skipped:
+/// the gaps a `*` covers are what the user asked for, so they cost
+/// nothing, while a match on a word or extension boundary still wins.
+/// Equally placed matches tie and are broken by path length upstream.
+fn score_glob(term: &Term, haystack: &[char], bonus: &[i32]) -> Option<(i32, Vec<usize>)> {
+    let positions = glob_match(term, haystack)?;
+    let mut score = 0i32;
+    let mut prev: Option<usize> = None;
+    for &p in &positions {
+        score = score.saturating_add(bonus[p]);
+        if prev.is_some_and(|q| q + 1 == p) {
+            score = score.saturating_add(MATCH_CONSECUTIVE);
+        }
+        prev = Some(p);
+    }
+    Some((score, positions))
 }
 
 /// Per-position bonus, derived from the *preceding* character: the start
@@ -152,7 +259,7 @@ fn score_term(term: &Term, haystack: &[char], bonus: &[i32]) -> Option<(i32, Vec
     if n == 0 || m == 0 || n > m {
         return None;
     }
-    if !is_subsequence(term, haystack) {
+    if !is_subsequence(&term.chars, term.case_sensitive, haystack) {
         return None;
     }
     // An exact-length match is the best possible; skip the DP.
@@ -335,5 +442,85 @@ mod tests {
     fn a_very_long_name_still_matches_without_the_dynamic_program() {
         let long = "a".repeat(MAX_HAYSTACK + 10) + "zz";
         assert!(score("zz", &long).is_some());
+    }
+
+    #[test]
+    fn a_star_matches_any_run_of_characters() {
+        assert!(score("*.txt", "readme.txt").is_some());
+        assert!(score("*.txt", "readme.md").is_none());
+        assert!(score("*.txt", ".txt").is_some());
+        assert!(score("report*", "report-2024.pdf").is_some());
+        assert!(score("report*", "annual-report.pdf").is_none());
+        assert!(score("*report*", "annual-report.pdf").is_some());
+    }
+
+    #[test]
+    fn a_wildcard_is_anchored_where_a_fuzzy_term_is_not() {
+        // Without wildcards the term is still a plain fuzzy subsequence.
+        assert!(score("txt", "a-t-x-t.md").is_some());
+        // With one, the pattern must describe the whole name.
+        assert!(score("*.txt", "notes.txt.bak").is_none());
+    }
+
+    #[test]
+    fn a_question_mark_matches_exactly_one_character() {
+        assert!(score("log?.txt", "log1.txt").is_some());
+        assert!(score("log?.txt", "log.txt").is_none());
+        assert!(score("log??.txt", "log12.txt").is_some());
+    }
+
+    #[test]
+    fn a_lone_star_matches_everything() {
+        assert!(score("*", "anything.txt").is_some());
+        assert!(score("*", "").is_some());
+    }
+
+    #[test]
+    fn several_stars_backtrack_correctly() {
+        assert!(score("*a*b*c*", "xxaxxbxxcxx").is_some());
+        assert!(score("*a*b*c*", "xxaxxcxxbxx").is_none());
+        // The greedy first attempt has to give ground for this to match.
+        assert!(score("*ab*", "aaab").is_some());
+    }
+
+    #[test]
+    fn a_wildcard_crosses_path_separators() {
+        assert!(score("*.rs", "src\\fs\\search.rs").is_some());
+        assert!(score("src\\*.rs", "src\\fs\\search.rs").is_some());
+    }
+
+    #[test]
+    fn wildcards_honour_smart_case_like_every_other_term() {
+        assert!(score("*.txt", "README.TXT").is_some());
+        assert!(score("*.TXT", "readme.txt").is_none());
+        assert!(score("*.TXT", "README.TXT").is_some());
+    }
+
+    #[test]
+    fn a_wildcard_can_be_combined_with_a_fuzzy_term() {
+        assert!(score("src *.rs", "src\\fs\\search.rs").is_some());
+        assert!(score("docs *.rs", "src\\fs\\search.rs").is_none());
+    }
+
+    #[test]
+    fn wildcard_positions_cover_the_literal_characters_only() {
+        // "*.txt" pins the last four characters of "a.txt".
+        assert_eq!(positions("*.txt", "a.txt"), vec![1, 2, 3, 4]);
+        assert_eq!(positions("log?.txt", "log1.txt"), vec![0, 1, 2, 3, 4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn a_wildcard_match_on_a_boundary_outranks_one_in_the_middle() {
+        let boundary = score("*report*", "annual_report.pdf").unwrap();
+        let inner = score("*report*", "xxreportxx.pdf").unwrap();
+        assert!(boundary > inner, "{} should beat {}", boundary, inner);
+    }
+
+    #[test]
+    fn the_candidate_filter_never_rejects_a_wildcard_match() {
+        let q = Query::new("*.txt");
+        assert!(q.is_candidate("readme.txt"));
+        assert!(q.is_candidate("a.txt"));
+        assert!(!q.is_candidate("readme.md"));
     }
 }

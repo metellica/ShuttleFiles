@@ -508,6 +508,44 @@ mod tests {
     }
 
     #[test]
+    fn a_wildcard_query_matches_by_extension() {
+        let dir = TempDir::new();
+        let root = dir.path();
+        std::fs::write(root.join("notes.txt"), b"x").unwrap();
+        std::fs::write(root.join("readme.md"), b"x").unwrap();
+        std::fs::create_dir(root.join("logs")).unwrap();
+        std::fs::write(root.join("logs").join("run.txt"), b"x").unwrap();
+        let root = root.to_string_lossy().to_string();
+
+        let shallow: Vec<String> = run(&root, "*.txt", false)
+            .hits
+            .into_iter()
+            .map(|h| h.rel)
+            .collect();
+        assert_eq!(shallow, vec!["notes.txt"]);
+
+        let mut deep: Vec<String> = run(&root, "*.txt", true)
+            .hits
+            .into_iter()
+            .map(|h| h.rel)
+            .collect();
+        deep.sort();
+        assert_eq!(deep, vec![sep("logs\\run.txt"), "notes.txt".to_string()]);
+    }
+
+    #[test]
+    fn a_wildcard_query_still_excludes_non_matches() {
+        let dir = fixture();
+        let root = dir.path().to_string_lossy().to_string();
+        let names: Vec<String> = run(&root, "*.md", true)
+            .hits
+            .into_iter()
+            .map(|h| h.entry.name)
+            .collect();
+        assert_eq!(names, vec!["readme.md"]);
+    }
+
+    #[test]
     fn a_missing_directory_is_an_error_not_a_panic() {
         let result = search_blocking(
             "Z:\\definitely\\not\\here",
