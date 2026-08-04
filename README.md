@@ -51,6 +51,10 @@ work. Remaining: remote shares (R4).
   and "Open with System Default" stays one click away. Every open starts the
   program in the item's own folder, like Explorer, so a `.bat` that calls its
   neighbours by relative path works
+- 💻 **Open with VS Code** — a row of its own when the editor is installed
+  (stable or Insiders, found through the registry): the whole selection goes to
+  one window, files as tabs and a folder as the project, from a file, a folder
+  or the empty space below the list
 - 🧩 **Third-party context menus** — "More options" opens the real Windows shell
   menu, so 7-Zip, WinMerge, TortoiseGit, PowerToys and everything else you have
   installed work exactly as they do in Explorer; hosted out of process

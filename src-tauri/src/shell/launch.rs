@@ -15,7 +15,7 @@ use crate::error::{AppError, AppResult};
 /// Where the handler should start: the folder holding `path`, or `path`
 /// itself when it is a folder. `None` for a drive root, whose parent
 /// does not exist — the shell then falls back to its own default.
-fn working_dir(path: &Path) -> Option<PathBuf> {
+pub(crate) fn working_dir(path: &Path) -> Option<PathBuf> {
     let dir = if path.is_dir() {
         path.to_path_buf()
     } else {

@@ -10,6 +10,11 @@ pub mod shell;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
+    // Before any thread exists, and before anything can be launched: a
+    // ShuttleFiles started from a VS Code terminal would otherwise pass
+    // that terminal's variables on to every program it opens, and an
+    // editor started with them never shows a window.
+    shell::vscode::purge_inherited_vars();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -50,6 +55,8 @@ pub fn run() {
             commands::openwith::save_open_with,
             commands::openwith::default_open_with,
             commands::openwith::open_entry,
+            commands::openwith::vscode_available,
+            commands::openwith::open_in_vscode,
             commands::find::fuzzy_find,
             commands::find::cancel_search,
             commands::find::start_hash,

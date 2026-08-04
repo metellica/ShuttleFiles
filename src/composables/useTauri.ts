@@ -136,6 +136,12 @@ export const defaultOpenWith = () => invoke<OpenWithSettings>('default_open_with
 export const openEntryPath = (path: string, program?: string) =>
   invoke<void>('open_entry', { path, program: program ?? null })
 
+/** False when VS Code is not installed, so the menu can leave it out. */
+export const vscodeAvailable = () => invoke<boolean>('vscode_available')
+
+/** Opens the whole selection in one VS Code window. */
+export const openInVscode = (paths: string[]) => invoke<void>('open_in_vscode', { paths })
+
 // --- Fuzzy search ------------------------------------------------------------
 
 /**

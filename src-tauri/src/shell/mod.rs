@@ -16,7 +16,11 @@
 //!   the item's own folder as the working directory, the way Explorer
 //!   does, so scripts that reference their siblings by relative path
 //!   still work.
+//! * **Visual Studio Code** — [`vscode`] finds the installed editor and
+//!   hands it a whole selection at once, which neither the association
+//!   nor the text-editor setting can do.
 
 pub mod clipboard;
 pub mod launch;
 pub mod menu;
+pub mod vscode;

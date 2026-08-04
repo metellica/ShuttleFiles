@@ -1,6 +1,6 @@
 use crate::config::openwith::{self, OpenWithSettings};
 use crate::error::AppResult;
-use crate::shell::launch;
+use crate::shell::{launch, vscode};
 
 #[tauri::command]
 pub fn load_open_with() -> AppResult<OpenWithSettings> {
@@ -25,4 +25,16 @@ pub fn default_open_with() -> OpenWithSettings {
 #[tauri::command]
 pub async fn open_entry(path: String, program: Option<String>) -> AppResult<()> {
     launch::open_async(path, program).await
+}
+
+/// Whether the VS Code menu entry is worth offering at all.
+#[tauri::command]
+pub fn vscode_available() -> bool {
+    vscode::locate().is_some()
+}
+
+/// Opens a whole selection in one VS Code window.
+#[tauri::command]
+pub async fn open_in_vscode(paths: Vec<String>) -> AppResult<()> {
+    vscode::open_async(paths).await
 }

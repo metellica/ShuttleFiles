@@ -136,7 +136,7 @@ function open(entry: FileEntry) {
   }
   // Text files go to the configured editor, everything else to the
   // system default; see the open-with store.
-  reportOpenFailure(openWith.openEntry(entry), entry)
+  reportOpenFailure(openWith.openEntry(entry), entry.name)
 }
 
 /**
@@ -160,25 +160,43 @@ function opensForEditing(entry: FileEntry): boolean {
 async function openArchiveMember(entry: FileEntry) {
   try {
     const extracted = await api.archiveOpenMember(entry.path)
-    reportOpenFailure(openWith.openEntry({ ...entry, path: extracted }), entry)
+    reportOpenFailure(openWith.openEntry({ ...entry, path: extracted }), entry.name)
   } catch (e) {
-    reportOpenFailure(Promise.reject(e), entry)
+    reportOpenFailure(Promise.reject(e), entry.name)
   }
 }
 
 /** Escape hatch for a file the configured editor is the wrong tool for. */
 function openWithSystemDefault(entry: FileEntry) {
-  reportOpenFailure(api.openEntryPath(entry.path), entry)
+  reportOpenFailure(api.openEntryPath(entry.path), entry.name)
+}
+
+/**
+ * VS Code takes the whole selection at once — files as tabs, a folder as
+ * the project — which is why it gets a row of its own rather than being
+ * one more thing to configure as the text editor.
+ */
+function openInVscode(paths: string[], name: string) {
+  reportOpenFailure(api.openInVscode(paths), name)
+}
+
+/**
+ * The whole selection when the click landed inside it, the clicked row
+ * on its own otherwise — the row the user aimed at is never left out.
+ * Copied out of the reactive array so what crosses the IPC is plain.
+ */
+function selectionOr(entry: FileEntry): string[] {
+  return selection.value.includes(entry.path) ? [...selection.value] : [entry.path]
 }
 
 /**
  * A failed open used to only reach the console, which made a misconfigured
  * editor or a missing association look like a dead menu entry.
  */
-function reportOpenFailure(attempt: Promise<void>, entry: FileEntry) {
+function reportOpenFailure(attempt: Promise<void>, name: string) {
   attempt.catch((e) => {
     console.error('Cannot open file:', e)
-    message(String(e), { title: `Cannot open ${entry.name}`, kind: 'error' }).catch(() => {})
+    message(String(e), { title: `Cannot open ${name}`, kind: 'error' }).catch(() => {})
   })
 }
 
@@ -440,12 +458,19 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   // Members live inside the archive file, so nothing that writes to the
   // file system in place is offered for them.
   const readOnly = insideArchive.value
+  // Asked on each menu rather than once at startup: the backend caches
+  // the answer, so this costs a message and not a search.
+  const hasVscode = await api.vscodeAvailable()
   const editing = !!entry && opensForEditing(entry)
+  // Snapshot at right-click time, so the label and what gets opened
+  // agree even if the list reloads while the menu is up.
+  const targets = entry ? selectionOr(entry) : []
   const items: MenuItem[] = entry
     ? [
         {
           label: editing ? 'Edit' : 'Open',
-          icon: editing ? '✏️' : '↩',
+          // Not the pencil: Rename further down already wears it.
+          icon: editing ? '📝' : '↩',
           action: () => open(entry),
         },
         ...(openWith.programFor(entry) || (!readOnly && archives.isArchiveFile(entry))
@@ -454,6 +479,18 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
                 label: 'Open with System Default',
                 icon: '🖥',
                 action: () => openWithSystemDefault(entry),
+              },
+            ]
+          : []),
+        ...(hasVscode && !readOnly
+          ? [
+              {
+                label:
+                  targets.length > 1
+                    ? `Open with VS Code (${targets.length})`
+                    : 'Open with VS Code',
+                icon: '💻',
+                action: () => openInVscode(targets, entry.name),
               },
             ]
           : []),
@@ -582,6 +619,15 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
           icon: '🗂',
           action: () => api.openEntryPath(props.path).catch(console.error),
         },
+        ...(hasVscode && props.path !== ROOT
+          ? [
+              {
+                label: 'Open Folder with VS Code',
+                icon: '💻',
+                action: () => openInVscode([props.path], props.path),
+              },
+            ]
+          : []),
         { separator: true },
         {
           label: 'Add Folder to Archive…',
