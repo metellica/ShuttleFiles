@@ -134,9 +134,8 @@ function open(entry: FileEntry) {
     emit('navigate', archiveRoot(entry.path))
     return
   }
-  // Text files go to the configured editor, everything else to the
-  // system default; see the open-with store.
-  reportOpenFailure(openWith.openEntry(entry), entry.name)
+  // Double-click always opens with the system default handler.
+  reportOpenFailure(api.openEntryPath(entry.path), entry.name)
 }
 
 /**
