@@ -16,6 +16,8 @@ const props = defineProps<{
   searching: boolean
   matches: number
   truncated: boolean
+  /** Whether the window is showing two panes side by side. */
+  split: boolean
 }>()
 
 const emit = defineEmits<{
@@ -26,6 +28,7 @@ const emit = defineEmits<{
   navigate: [path: string]
   'new-folder': []
   'toggle-favorite': []
+  'toggle-split': []
   settings: []
   'update:filter': [value: string]
   'update:recursive': [value: boolean]
@@ -111,6 +114,14 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
       ＋
     </button>
     <DensityControl />
+    <button
+      class="nav-btn"
+      :class="{ on: props.split }"
+      :title="props.split ? 'Close split view (Ctrl+\\)' : 'Split view (Ctrl+\\)'"
+      @click="emit('toggle-split')"
+    >
+      ◫
+    </button>
     <button class="nav-btn" title="Settings" @click="emit('settings')">⚙</button>
   </div>
 </template>
@@ -150,6 +161,11 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 
 .nav-btn.starred {
   color: #f9e2af;
+}
+
+.nav-btn.on {
+  color: #89b4fa;
+  background: #313244;
 }
 
 .filter {

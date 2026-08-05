@@ -57,11 +57,17 @@ export interface TabSnapshot {
   path: string
   lock: 'none' | 'locked' | 'locked-allow-dirs'
   lockedPath: string
+  /** Which side of a vertical split the tab belongs to; 0 when unsplit. */
+  pane: number
+  /** The tab that was in front on its side. */
+  active: boolean
 }
 
 /** Persisted shape of `~/.config/shuttle-files/view.json`. */
 export interface ViewSettings {
   rowScale: number
+  /** Share of the width the left pane takes when the view is split. */
+  splitRatio: number
 }
 
 /** Persisted shape of `~/.config/shuttle-files/open-with.json`. */

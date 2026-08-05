@@ -14,6 +14,12 @@ work. Remaining: remote shares (R4).
 
 - 🗂 **Multi-tab** — per-tab Back/Forward history, drag to reorder, middle-click
   to close, duplicate/close-others context menu, tabs restored on restart
+- ◫ **Vertical split** — `Ctrl+\` puts two panes side by side, each with its own
+  tabs, history and filter; `F6` alternates sides, the divider drags (double
+  click evens it out), a tab moves across from its context menu, and both sides
+  come back on the next start. Copy in one pane and Paste in the other is the
+  short way to move a file; the toolbar and status line follow whichever side
+  has the focus, and closing a side folds its tabs into the one that stays
 - 🎯 **Fast Dial** — a new tab opens a dial page with drives (capacity bars),
   quick-access folders, favorites (drag to reorder) and most-visited folders
 - ⭐ **Favorites** — star the current folder from the toolbar or any folder from
@@ -283,6 +289,7 @@ drives and renders as the fast dial.
 | Keys | Action |
 |------|--------|
 | `Ctrl+T` / `Ctrl+W` | New tab / close tab |
+| `Ctrl+\` / `F6` | Split the view / focus the other side |
 | `Alt+←` / `Alt+→` / `Alt+↑` | Back / Forward / Up |
 | `Backspace` | Up one folder |
 | `Ctrl+L` | Edit address bar |
@@ -303,8 +310,8 @@ Plain JSON under `~/.config/shuttle-files/`, matching the ShuttleSFTP convention
 |------|----------|
 | `favorites.json` | Starred folders shown on the fast dial |
 | `recent.json` | Visit history (capped at 200) driving "Frequent" |
-| `tabs.json` | Open tabs, restored on the next start |
-| `view.json` | Row size |
+| `tabs.json` | Open tabs, restored on the next start — including which side of a split each was on |
+| `view.json` | Row size and the split position |
 | `open-with.json` | Program used for text files, and which extensions count as text |
 
 ## License

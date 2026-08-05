@@ -13,6 +13,10 @@ export const MIN_ROW_SCALE = 0.75
 export const MAX_ROW_SCALE = 2.5
 export const ROW_SCALE_STEP = 0.08
 
+/** Neither pane may be squeezed past this share of the window. */
+export const MIN_SPLIT_RATIO = 0.15
+export const MAX_SPLIT_RATIO = 0.85
+
 export interface RowPreset {
   id: 'small' | 'medium' | 'large'
   label: string
@@ -32,6 +36,11 @@ function clamp(value: number): number {
   return Math.min(MAX_ROW_SCALE, Math.max(MIN_ROW_SCALE, value))
 }
 
+function clampRatio(value: number): number {
+  if (!Number.isFinite(value)) return 0.5
+  return Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, value))
+}
+
 /** Row scale saved by an older build that used the WebView's localStorage. */
 function takeLegacyScale(): number | null {
   try {
@@ -48,8 +57,16 @@ function takeLegacyScale(): number | null {
 
 export const useViewSettingsStore = defineStore('viewSettings', () => {
   const rowScale = ref(1)
+  const splitRatio = ref(0.5)
   // Saving before the stored value has arrived would overwrite it with the default.
   let loaded = false
+
+  function save() {
+    if (!loaded) return
+    saveViewSettings({ rowScale: rowScale.value, splitRatio: splitRatio.value }).catch((e) =>
+      console.error('Cannot save view settings:', e)
+    )
+  }
 
   async function restore() {
     try {
@@ -58,11 +75,12 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
         rowScale.value = legacy
         loaded = true
         // Writing back turns a migrated localStorage value into view.json.
-        await saveViewSettings({ rowScale: legacy })
+        await saveViewSettings({ rowScale: legacy, splitRatio: splitRatio.value })
         return
       }
       const settings = await loadViewSettings()
       rowScale.value = clamp(settings.rowScale)
+      splitRatio.value = clampRatio(settings.splitRatio)
     } catch (e) {
       console.error('Cannot restore view settings:', e)
     } finally {
@@ -70,12 +88,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
     }
   }
 
-  watch(rowScale, (value) => {
-    if (!loaded) return
-    saveViewSettings({ rowScale: value }).catch((e) =>
-      console.error('Cannot save view settings:', e)
-    )
-  })
+  watch([rowScale, splitRatio], save)
 
   /** The preset the current scale corresponds to, if any. */
   const activePreset = computed(
@@ -105,13 +118,20 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
     rowScale.value = 1
   }
 
+  /** Dragged splitter position, as the left pane's share of the width. */
+  function setSplitRatio(value: number) {
+    splitRatio.value = clampRatio(value)
+  }
+
   return {
     rowScale,
+    splitRatio,
     activePreset,
     percent,
     restore,
     setScale,
     setPreset,
+    setSplitRatio,
     nudge,
     reset,
   }

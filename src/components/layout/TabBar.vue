@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { hasStrayed, useTabsStore, type Tab, type TabLock } from '@/stores/tabs'
+import { computed, ref } from 'vue'
+import { hasStrayed, useTabsStore, type Pane, type Tab, type TabLock } from '@/stores/tabs'
 import ContextMenu, { type MenuItem } from '@/components/common/ContextMenu.vue'
 
+const props = defineProps<{ pane: Pane }>()
 const emit = defineEmits<{ 'new-tab': [] }>()
 const tabsStore = useTabsStore()
+
+/** Only the focused side is drawn at full strength when split. */
+const focused = computed(() => !tabsStore.split || tabsStore.activePaneId === props.pane.id)
 
 const dragIndex = ref<number | null>(null)
 const dropIndex = ref<number | null>(null)
@@ -71,11 +75,20 @@ function openTabMenu(tab: Tab, event: MouseEvent) {
           ]
         : []),
       { separator: true },
+      ...(tabsStore.split
+        ? [
+            {
+              label: 'Move to Other Side',
+              icon: '⇄',
+              action: () => tabsStore.moveTabToOtherPane(tab.id),
+            },
+          ]
+        : []),
       { label: 'Close Tab', icon: '×', action: () => tabsStore.closeTab(tab.id, true) },
       {
         label: 'Close Other Tabs',
         icon: '⊗',
-        disabled: tabsStore.tabs.length < 2,
+        disabled: props.pane.tabs.length < 2,
         action: () => tabsStore.closeOthers(tab.id),
       },
     ],
@@ -95,7 +108,7 @@ function onDragOver(index: number, event: DragEvent) {
 }
 
 function onDrop(index: number) {
-  if (dragIndex.value !== null) tabsStore.moveTab(dragIndex.value, index)
+  if (dragIndex.value !== null) tabsStore.moveTab(props.pane.id, dragIndex.value, index)
   dragIndex.value = null
   dropIndex.value = null
 }
@@ -110,13 +123,13 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 </script>
 
 <template>
-  <div class="tab-bar">
+  <div class="tab-bar" :class="{ unfocused: !focused }" @mousedown="tabsStore.setActivePane(props.pane.id)">
     <div
-      v-for="(tab, index) in tabsStore.tabs"
+      v-for="(tab, index) in props.pane.tabs"
       :key="tab.id"
       class="tab"
       :class="{
-        active: tab.id === tabsStore.activeTabId,
+        active: tab.id === props.pane.activeTabId,
         'drop-target': dropIndex === index && dragIndex !== index,
         locked: tab.lock === 'locked',
         'soft-locked': tab.lock === 'locked-allow-dirs',
@@ -168,6 +181,13 @@ function onMouseDown(tabId: string, event: MouseEvent) {
   overflow-x: auto;
   user-select: none;
   flex-shrink: 0;
+  min-width: 0;
+}
+
+/* The side without the focus recedes rather than disappears. */
+.tab-bar.unfocused .tab.active {
+  box-shadow: inset 0 2px 0 #45475a;
+  color: #a6adc8;
 }
 
 .tab-bar::-webkit-scrollbar {
