@@ -6,10 +6,21 @@ pub mod error;
 pub mod fs;
 pub mod ops;
 pub mod shell;
+pub mod terminal;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
+
+    // Write panics to a file so we can diagnose crashes in release mode.
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("{}\n{:?}", info, std::backtrace::Backtrace::force_capture());
+        let path = dirs::data_local_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("shuttle-files-panic.log");
+        let _ = std::fs::write(&path, &msg);
+        eprintln!("PANIC: {}", msg);
+    }));
     // Before any thread exists, and before anything can be launched: a
     // ShuttleFiles started from a VS Code terminal would otherwise pass
     // that terminal's variables on to every program it opens, and an
@@ -30,6 +41,7 @@ pub fn run() {
         .manage(ops::OpsRegistry::default())
         .manage(cancel::SearchCancels::default())
         .manage(cancel::HashCancels::default())
+        .manage(terminal::TerminalManager::default())
         .invoke_handler(tauri::generate_handler![
             commands::filesystem::list_dir,
             commands::filesystem::resolve_path,
@@ -73,6 +85,13 @@ pub fn run() {
             commands::operations::cancel_operation,
             commands::operations::list_operations,
             commands::operations::clear_finished_operations,
+            commands::terminal::list_terminals,
+            commands::terminal::open_terminal,
+            commands::terminal::terminal_reserve,
+            commands::terminal::terminal_open,
+            commands::terminal::terminal_input,
+            commands::terminal::terminal_resize,
+            commands::terminal::terminal_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ShuttleFiles");

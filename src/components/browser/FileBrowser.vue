@@ -25,6 +25,7 @@ const emit = defineEmits<{
   'new-tab': [path: string]
   find: [recursive: boolean]
   stats: [value: { total: number; selected: number; searching: boolean; truncated: boolean }]
+  'open-terminal': [shellId: string]
 }>()
 
 const clipboard = useClipboardStore()
@@ -35,6 +36,9 @@ const archives = useArchivesStore()
 const search = useFuzzySearch()
 
 const entries = ref<FileEntry[]>([])
+const terminals = ref<Awaited<ReturnType<typeof api.listTerminals>>>([])
+// Fetch once on mount; the backend caches internally.
+api.listTerminals().then((t) => (terminals.value = t)).catch(() => {})
 const selection = ref<string[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -316,6 +320,37 @@ function hashMenu(): MenuItem {
       { separator: true },
       { label: 'MD5 and SHA-256', action: () => openHashDialog(['md5', 'sha256']) },
     ],
+  }
+}
+
+/** "Open Terminal" submenu with all detected terminals. */
+function terminalMenu(cwd: string): MenuItem {
+  const children: MenuItem[] = []
+  const sys = terminals.value.filter((t) => t.group === 'system')
+  const vs = terminals.value.filter((t) => t.group === 'visual-studio')
+  const git = terminals.value.filter((t) => t.group === 'git')
+
+  for (const t of sys) {
+    children.push({ label: t.label, action: () => emit('open-terminal', t.id) })
+  }
+  if (vs.length) {
+    children.push({ separator: true })
+    for (const t of vs) {
+      children.push({ label: t.label, action: () => emit('open-terminal', t.id) })
+    }
+  }
+  if (git.length) {
+    children.push({ separator: true })
+    for (const t of git) {
+      children.push({ label: t.label, action: () => emit('open-terminal', t.id) })
+    }
+  }
+
+  return {
+    label: 'Open Terminal',
+    icon: '⌨',
+    disabled: children.length === 0,
+    children,
   }
 }
 
@@ -618,6 +653,7 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
           icon: '🗂',
           action: () => api.openEntryPath(props.path).catch(console.error),
         },
+        terminalMenu(props.path),
         ...(hasVscode && props.path !== ROOT
           ? [
               {

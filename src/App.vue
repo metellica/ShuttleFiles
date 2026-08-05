@@ -8,12 +8,15 @@ import { useOperationsStore } from '@/stores/operations'
 import { useViewSettingsStore } from '@/stores/viewSettings'
 import { useOpenWithStore } from '@/stores/openWith'
 import { isInsideArchive, useArchivesStore } from '@/stores/archives'
-import { parentPath } from '@/composables/useTauri'
+import { useTerminalsStore } from '@/stores/terminals'
+import { parentPath, listTerminals } from '@/composables/useTauri'
 import { ROOT } from '@/types/filesystem'
+import type { TerminalEntry } from '@/types/terminal'
 import TabBar from '@/components/layout/TabBar.vue'
 import Toolbar from '@/components/layout/Toolbar.vue'
 import OperationBar from '@/components/layout/OperationBar.vue'
 import FileBrowser from '@/components/browser/FileBrowser.vue'
+import TerminalPanel from '@/components/terminal/TerminalPanel.vue'
 import PromptDialog from '@/components/common/PromptDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
 
@@ -32,6 +35,7 @@ const ops = useOperationsStore()
 const view = useViewSettingsStore()
 const openWith = useOpenWithStore()
 const archives = useArchivesStore()
+const terminalsStore = useTerminalsStore()
 
 let unlistenOps: UnlistenFn | null = null
 
@@ -41,6 +45,18 @@ const upTarget = ref<string | null>(null)
 const toolbarRef = ref<InstanceType<typeof Toolbar> | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 const settingsOpen = ref(false)
+const terminalsList = ref<TerminalEntry[]>([])
+listTerminals().then((t) => (terminalsList.value = t)).catch(() => {})
+
+function openEmbeddedTerminal(shellId: string) {
+  const tabId = tabs.activeTabId
+  if (!tabId) return
+  const cwd = currentPath.value
+  if (!cwd || cwd === ROOT) return
+  const entry = terminalsList.value.find((t) => t.id === shellId)
+  const label = entry?.label ?? shellId
+  terminalsStore.open(tabId, shellId, cwd, label)
+}
 
 /**
  * One browser per pane, reached by pane id rather than a single ref, so
@@ -143,11 +159,18 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
 }
 
+function isTerminalTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return !!el?.closest('.terminal-panel')
+}
+
 function onKeyDown(e: KeyboardEvent) {
   const typing = isTypingTarget(e.target)
   const mod = e.ctrlKey || e.metaKey
   const id = tabs.activeTabId
   if (!id) return
+  // Shell control keys belong to xterm, not the file browser.
+  if (isTerminalTarget(e.target)) return
 
   // Shortcuts that must work even while the address bar has focus.
   if (mod && e.key.toLowerCase() === 't') {
@@ -312,6 +335,7 @@ onUnmounted(() => {
       :matches="stats.total"
       :truncated="stats.truncated"
       :split="tabs.split"
+      :terminals="terminalsList"
       @back="tabs.activeTabId && tabs.goBack(tabs.activeTabId)"
       @forward="tabs.activeTabId && tabs.goForward(tabs.activeTabId)"
       @up="upTarget !== null && navigate(upTarget)"
@@ -321,6 +345,7 @@ onUnmounted(() => {
       @toggle-favorite="toggleFavorite"
       @toggle-split="tabs.toggleSplit()"
       @settings="settingsOpen = true"
+      @open-terminal="openEmbeddedTerminal"
       @update:filter="filter = $event"
       @update:recursive="recursive = $event"
     />
@@ -351,10 +376,16 @@ onUnmounted(() => {
             @new-tab="tabs.addTabIn(pane.id, $event)"
             @find="focusFilter(pane, $event)"
             @stats="paneStats[pane.id] = $event"
+            @open-terminal="openEmbeddedTerminal"
           />
         </section>
       </template>
     </main>
+
+    <TerminalPanel
+      :terminals="terminalsList"
+      @open-terminal="openEmbeddedTerminal"
+    />
 
     <OperationBar />
 

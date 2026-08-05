@@ -7,3 +7,4 @@ pub mod openwith;
 pub mod places;
 pub mod session;
 pub mod shellmenu;
+pub mod terminal;

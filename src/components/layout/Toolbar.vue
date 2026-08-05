@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import PathBar from '@/components/browser/PathBar.vue'
 import DensityControl from '@/components/layout/DensityControl.vue'
+import type { TerminalEntry } from '@/types/terminal'
 
 const props = defineProps<{
   path: string
@@ -18,6 +19,7 @@ const props = defineProps<{
   truncated: boolean
   /** Whether the window is showing two panes side by side. */
   split: boolean
+  terminals: TerminalEntry[]
 }>()
 
 const emit = defineEmits<{
@@ -30,6 +32,7 @@ const emit = defineEmits<{
   'toggle-favorite': []
   'toggle-split': []
   settings: []
+  'open-terminal': [id: string]
   'update:filter': [value: string]
   'update:recursive': [value: boolean]
 }>()
@@ -43,6 +46,27 @@ async function focusFilter(recursive?: boolean) {
   filterRef.value?.focus()
   filterRef.value?.select()
 }
+
+const terminalDropdownOpen = ref(false)
+const terminalBtnRef = ref<HTMLElement | null>(null)
+
+function toggleTerminalDropdown() {
+  terminalDropdownOpen.value = !terminalDropdownOpen.value
+}
+
+function pickTerminal(id: string) {
+  terminalDropdownOpen.value = false
+  emit('open-terminal', id)
+}
+
+// Close dropdown on outside click.
+function onDocClick(e: MouseEvent) {
+  if (!terminalBtnRef.value?.contains(e.target as Node)) {
+    terminalDropdownOpen.value = false
+  }
+}
+onMounted(() => document.addEventListener('mousedown', onDocClick))
+onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 
 defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 </script>
@@ -122,6 +146,27 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
     >
       ◫
     </button>
+    <div ref="terminalBtnRef" class="terminal-dropdown" :class="{ open: terminalDropdownOpen }">
+      <button
+        class="nav-btn"
+        :disabled="!props.path || props.terminals.length === 0"
+        title="Open Terminal"
+        @click="toggleTerminalDropdown"
+      >
+        ⌨
+      </button>
+      <div v-if="terminalDropdownOpen" class="terminal-menu">
+        <template v-for="(t, i) in props.terminals" :key="t.id">
+          <div
+            v-if="i > 0 && props.terminals[i - 1]!.group !== t.group"
+            class="terminal-sep"
+          />
+          <button class="terminal-item" @click="pickTerminal(t.id)">
+            {{ t.label }}
+          </button>
+        </template>
+      </div>
+    </div>
     <button class="nav-btn" title="Settings" @click="emit('settings')">⚙</button>
   </div>
 </template>
@@ -210,5 +255,50 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 .recurse.on {
   color: #89b4fa;
   background: #313244;
+}
+
+.terminal-dropdown {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.terminal-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 200;
+  min-width: 220px;
+  background: #24243a;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #cdd6f4;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.terminal-item:hover {
+  background: #45475a;
+}
+
+.terminal-sep {
+  height: 1px;
+  background: #45475a;
+  margin: 4px 6px;
 }
 </style>

@@ -18,6 +18,7 @@ import type {
   JobState,
   ShellMenuResult,
 } from '@/types/operations'
+import type { TerminalEntry } from '@/types/terminal'
 
 export const listDir = (path: string) => invoke<DirListing>('list_dir', { path })
 
@@ -165,3 +166,40 @@ export const startHash = (id: string, paths: string[], algos: HashAlgo[]) =>
   invoke<void>('start_hash', { id, paths, algos })
 
 export const cancelHash = (id: string) => invoke<void>('cancel_hash', { id })
+
+// --- Terminals ---------------------------------------------------------------
+
+/** Returns detected terminal environments (cmd, powershell, VS dev, git bash). */
+export const listTerminals = () => invoke<TerminalEntry[]>('list_terminals')
+
+/** Opens a terminal by id in the given directory. */
+export const openTerminal = (id: string, cwd: string) =>
+  invoke<void>('open_terminal', { id, cwd })
+
+// --- Embedded PTY terminals --------------------------------------------------
+
+/** Reserve an embedded terminal id; returns a token. */
+export const terminalReserve = (terminalId: string) =>
+  invoke<string>('terminal_reserve', { terminalId })
+
+/** Open a PTY terminal of the given shell type. */
+export const terminalOpen = (
+  terminalId: string,
+  terminalToken: string,
+  shellId: string,
+  cwd: string,
+  cols: number,
+  rows: number
+) => invoke<void>('terminal_open', { terminalId, terminalToken, shellId, cwd, cols, rows })
+
+/** Feed keyboard input (base64-encoded) to an embedded terminal. */
+export const terminalInput = (terminalId: string, terminalToken: string, data: string) =>
+  invoke<void>('terminal_input', { terminalId, terminalToken, data })
+
+/** Resize an embedded terminal. */
+export const terminalResize = (terminalId: string, terminalToken: string, cols: number, rows: number) =>
+  invoke<void>('terminal_resize', { terminalId, terminalToken, cols, rows })
+
+/** Close an embedded terminal. */
+export const terminalClose = (terminalId: string, terminalToken: string) =>
+  invoke<void>('terminal_close', { terminalId, terminalToken })

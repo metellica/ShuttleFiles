@@ -23,4 +23,5 @@
 pub mod clipboard;
 pub mod launch;
 pub mod menu;
+pub mod terminal;
 pub mod vscode;
