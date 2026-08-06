@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { FileEntry, SearchHit } from '@/types/filesystem'
 import { fileIcon, formatSize, formatTime } from '@/composables/useFormat'
-import { useViewSettingsStore } from '@/stores/viewSettings'
+import { COLUMN_KEYS, useViewSettingsStore, type ColumnKey } from '@/stores/viewSettings'
 
 const props = defineProps<{
   entries: FileEntry[] | SearchHit[]
@@ -155,6 +155,60 @@ function typeLabel(entry: FileEntry): string {
   return entry.ext ? `${entry.ext.toUpperCase()} file` : 'File'
 }
 
+/*
+ * Column layout. Widths are stored unscaled and multiplied by the row
+ * scale here, so zooming the rows keeps the columns in proportion.
+ */
+const scaled = computed(
+  () =>
+    Object.fromEntries(
+      COLUMN_KEYS.map((key) => [key, view.columnWidths[key] * view.rowScale])
+    ) as Record<ColumnKey, number>
+)
+
+/** Once the columns outgrow the pane the list scrolls sideways instead of squeezing. */
+const totalWidth = computed(() => COLUMN_KEYS.reduce((sum, key) => sum + scaled.value[key], 0))
+
+function colStyle(key: ColumnKey) {
+  const width = `${scaled.value[key]}px`
+  // The stretched name column fills the pane; once dragged it keeps its width
+  // and the filler at the end of the row takes the slack instead.
+  return key === 'name' && view.stretchName
+    ? { flex: `1 0 ${width}`, minWidth: width }
+    : { flex: `0 0 ${width}`, width }
+}
+
+/** Absorbs the leftover width so no column has to stretch to fill the row. */
+const fillerStyle = computed(() => ({ flex: view.stretchName ? '0 0 0px' : '1 0 0px' }))
+
+const resizing = ref<ColumnKey | null>(null)
+const headNameRef = ref<HTMLElement | null>(null)
+
+/** Drag a header divider; the width it writes is what the next start restores. */
+function startResize(key: ColumnKey, event: MouseEvent) {
+  const startX = event.clientX
+  // Undo the row scale so a pixel of pointer travel is a pixel on screen.
+  const scale = view.rowScale || 1
+  // A stretched name column is wider than its stored width, so the drag has
+  // to start from what is actually on screen or the first pixels do nothing.
+  const startWidth =
+    key === 'name' && headNameRef.value
+      ? headNameRef.value.getBoundingClientRect().width / scale
+      : view.columnWidths[key]
+  resizing.value = key
+
+  const move = (e: MouseEvent) => view.setColumnWidth(key, startWidth + (e.clientX - startX) / scale)
+  const stop = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', stop)
+    document.body.classList.remove('splitting')
+    resizing.value = null
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', stop)
+  document.body.classList.add('splitting')
+}
+
 defineExpose({
   selectAll: () => {
     selected.value = new Set(sorted.value.map((e) => e.path))
@@ -167,57 +221,101 @@ defineExpose({
   <div
     ref="rootRef"
     class="file-list"
-    :style="{ '--row-scale': view.rowScale }"
+    :style="{ '--row-scale': view.rowScale, '--total-width': `${totalWidth}px` }"
     @contextmenu.self.prevent="onBlankContext"
   >
-    <div class="head">
-      <button class="col name" @click="setSort('name')">
-        Name<span v-if="sortKey === 'name'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
-        <span v-else-if="sortKey === 'relevance'" class="rank-hint"> · by relevance</span>
-      </button>
-      <button class="col size" @click="setSort('size')">
-        Size<span v-if="sortKey === 'size'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
-      </button>
-      <button class="col type" @click="setSort('ext')">
-        Type<span v-if="sortKey === 'ext'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
-      </button>
-      <button class="col time" @click="setSort('modified')">
-        Modified<span v-if="sortKey === 'modified'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
-      </button>
-    </div>
-
-    <div class="body" @contextmenu.self.prevent="onBlankContext">
-      <div v-if="loading" class="notice">Loading…</div>
-      <div v-else-if="error" class="notice error">{{ error }}</div>
-      <div v-else-if="sorted.length === 0" class="notice">
-        {{ props.searchMode ? 'No matches' : 'This folder is empty' }}
-      </div>
-
-      <div
-        v-for="(entry, index) in sorted"
-        v-else
-        :key="entry.path"
-        class="row"
-        :class="{ selected: selected.has(entry.path), hidden: entry.isHidden }"
-        @click="onRowClick(entry, index, $event)"
-        @dblclick="emit('open', entry)"
-        @contextmenu.prevent.stop="onRowContext(entry, index, $event)"
-      >
-        <div class="col name">
-          <span class="icon">{{ fileIcon(entry.ext, entry.isDir) }}</span>
-          <span class="label"
-            ><span
-              v-for="(part, i) in segments(entry)"
-              :key="i"
-              :class="{ mark: part.hit }"
-              >{{ part.text }}</span
-            ></span
-          >
-          <span v-if="entry.isSymlink" class="link-badge" title="Symbolic link">↗</span>
+    <div class="scroll" @contextmenu.self.prevent="onBlankContext">
+      <div class="sheet">
+        <div class="head">
+          <div ref="headNameRef" class="col name" :style="colStyle('name')">
+            <button class="sort" @click="setSort('name')">
+              Name<span v-if="sortKey === 'name'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
+              <span v-else-if="sortKey === 'relevance'" class="rank-hint"> · by relevance</span>
+            </button>
+            <span
+              class="grip"
+              :class="{ active: resizing === 'name' }"
+              title="Drag to resize, double-click to reset"
+              @mousedown.prevent.stop="startResize('name', $event)"
+              @dblclick.stop="view.resetColumnWidth('name')"
+            />
+          </div>
+          <div class="col size" :style="colStyle('size')">
+            <button class="sort" @click="setSort('size')">
+              Size<span v-if="sortKey === 'size'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
+            </button>
+            <span
+              class="grip"
+              :class="{ active: resizing === 'size' }"
+              title="Drag to resize, double-click to reset"
+              @mousedown.prevent.stop="startResize('size', $event)"
+              @dblclick.stop="view.resetColumnWidth('size')"
+            />
+          </div>
+          <div class="col type" :style="colStyle('type')">
+            <button class="sort" @click="setSort('ext')">
+              Type<span v-if="sortKey === 'ext'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
+            </button>
+            <span
+              class="grip"
+              :class="{ active: resizing === 'type' }"
+              title="Drag to resize, double-click to reset"
+              @mousedown.prevent.stop="startResize('type', $event)"
+              @dblclick.stop="view.resetColumnWidth('type')"
+            />
+          </div>
+          <div class="col time" :style="colStyle('time')">
+            <button class="sort" @click="setSort('modified')">
+              Modified<span v-if="sortKey === 'modified'">{{ sortAsc ? ' ▲' : ' ▼' }}</span>
+            </button>
+            <span
+              class="grip"
+              :class="{ active: resizing === 'time' }"
+              title="Drag to resize, double-click to reset"
+              @mousedown.prevent.stop="startResize('time', $event)"
+              @dblclick.stop="view.resetColumnWidth('time')"
+            />
+          </div>
+          <div class="col filler" :style="fillerStyle" />
         </div>
-        <div class="col size">{{ entry.isDir ? '' : formatSize(entry.size) }}</div>
-        <div class="col type">{{ typeLabel(entry) }}</div>
-        <div class="col time">{{ formatTime(entry.modified) }}</div>
+
+        <div class="body" @contextmenu.self.prevent="onBlankContext">
+          <div v-if="loading" class="notice">Loading…</div>
+          <div v-else-if="error" class="notice error">{{ error }}</div>
+          <div v-else-if="sorted.length === 0" class="notice">
+            {{ props.searchMode ? 'No matches' : 'This folder is empty' }}
+          </div>
+
+          <div
+            v-for="(entry, index) in sorted"
+            v-else
+            :key="entry.path"
+            class="row"
+            :class="{ selected: selected.has(entry.path), hidden: entry.isHidden }"
+            @click="onRowClick(entry, index, $event)"
+            @dblclick="emit('open', entry)"
+            @contextmenu.prevent.stop="onRowContext(entry, index, $event)"
+          >
+            <div class="col name" :style="colStyle('name')">
+              <span class="icon">{{ fileIcon(entry.ext, entry.isDir) }}</span>
+              <span class="label"
+                ><span
+                  v-for="(part, i) in segments(entry)"
+                  :key="i"
+                  :class="{ mark: part.hit }"
+                  >{{ part.text }}</span
+                ></span
+              >
+              <span v-if="entry.isSymlink" class="link-badge" title="Symbolic link">↗</span>
+            </div>
+            <div class="col size" :style="colStyle('size')">
+              {{ entry.isDir ? '' : formatSize(entry.size) }}
+            </div>
+            <div class="col type" :style="colStyle('type')">{{ typeLabel(entry) }}</div>
+            <div class="col time" :style="colStyle('time')">{{ formatTime(entry.modified) }}</div>
+            <div class="col filler" :style="fillerStyle" />
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -231,6 +329,7 @@ defineExpose({
  */
 .file-list {
   --row-scale: 1;
+  --total-width: 0px;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -238,31 +337,99 @@ defineExpose({
   user-select: none;
 }
 
+/* One scroller for the header and the rows, so they never drift apart. */
+.scroll {
+  flex: 1;
+  overflow: auto;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  /* Wide enough for the columns, but never narrower than the pane. */
+  width: max(100%, var(--total-width));
+  min-height: 100%;
+}
+
 .head {
   display: flex;
   border-bottom: 1px solid #313244;
   background: #181825;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .head .col {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  /*
+   * Cells clip their text with overflow:hidden, which would swallow the grip
+   * that hangs over the column edge. Only the sort button needs clipping.
+   */
+  overflow: visible;
+}
+
+.head .col.size {
+  justify-content: flex-end;
+}
+
+.head .sort {
+  flex: 1;
+  min-width: 0;
   background: none;
   border: none;
   color: #a6adc8;
   font-size: calc(11px * var(--row-scale));
   font-family: inherit;
-  text-align: left;
+  text-align: inherit;
   padding: calc(6px * var(--row-scale)) calc(8px * var(--row-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.head .col:hover {
+.head .col.size .sort {
+  text-align: right;
+}
+
+.head .sort:hover {
   color: #89b4fa;
+}
+
+/* Kept inside the cell so the last column's handle cannot fall off the pane. */
+.grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.grip::after {
+  content: '';
+  position: absolute;
+  top: 15%;
+  right: 0;
+  width: 1px;
+  height: 70%;
+  background: #313244;
+}
+
+.grip:hover::after,
+.grip.active::after {
+  background: #89b4fa;
+  width: 2px;
 }
 
 .body {
   flex: 1;
-  overflow-y: auto;
 }
 
 .row {
@@ -287,6 +454,7 @@ defineExpose({
 }
 
 .col {
+  box-sizing: border-box;
   padding: calc(4px * var(--row-scale)) calc(8px * var(--row-scale));
   overflow: hidden;
   text-overflow: ellipsis;
@@ -294,7 +462,6 @@ defineExpose({
 }
 
 .col.name {
-  flex: 1;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -302,22 +469,21 @@ defineExpose({
 }
 
 .col.size {
-  width: calc(90px * var(--row-scale));
   text-align: right;
   color: #a6adc8;
-  flex-shrink: 0;
 }
 
 .col.type {
-  width: calc(110px * var(--row-scale));
   color: #a6adc8;
-  flex-shrink: 0;
 }
 
 .col.time {
-  width: calc(140px * var(--row-scale));
   color: #a6adc8;
-  flex-shrink: 0;
+}
+
+.col.filler {
+  padding: 0;
+  min-width: 0;
 }
 
 .icon {

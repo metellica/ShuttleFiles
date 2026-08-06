@@ -63,11 +63,23 @@ export interface TabSnapshot {
   active: boolean
 }
 
+/** Width of every file-list column, in unscaled pixels. */
+export interface ColumnWidths {
+  name: number
+  size: number
+  type: number
+  time: number
+}
+
 /** Persisted shape of `~/.config/shuttle-files/view.json`. */
 export interface ViewSettings {
   rowScale: number
   /** Share of the width the left pane takes when the view is split. */
   splitRatio: number
+  /** Column widths the user dragged the header dividers to. */
+  columnWidths: ColumnWidths
+  /** While true the name column ignores its width and fills the pane. */
+  stretchName: boolean
 }
 
 /** Persisted shape of `~/.config/shuttle-files/open-with.json`. */

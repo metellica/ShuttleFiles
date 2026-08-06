@@ -43,15 +43,65 @@ pub struct TabSnapshot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ColumnWidths {
+    #[serde(default = "default_name_width")]
+    pub name: f64,
+    #[serde(default = "default_size_width")]
+    pub size: f64,
+    #[serde(default = "default_type_width")]
+    pub r#type: f64,
+    #[serde(default = "default_time_width")]
+    pub time: f64,
+}
+
+fn default_name_width() -> f64 {
+    280.0
+}
+
+fn default_size_width() -> f64 {
+    90.0
+}
+
+fn default_type_width() -> f64 {
+    110.0
+}
+
+fn default_time_width() -> f64 {
+    140.0
+}
+
+impl Default for ColumnWidths {
+    fn default() -> Self {
+        Self {
+            name: default_name_width(),
+            size: default_size_width(),
+            r#type: default_type_width(),
+            time: default_time_width(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ViewSettings {
     pub row_scale: f64,
     /// Share of the width the left pane takes when the view is split.
     #[serde(default = "default_split_ratio")]
     pub split_ratio: f64,
+    /// Width of each file-list column, before the row scale is applied.
+    #[serde(default)]
+    pub column_widths: ColumnWidths,
+    /// While true the name column ignores its width and fills the pane.
+    #[serde(default = "default_stretch_name")]
+    pub stretch_name: bool,
 }
 
 fn default_split_ratio() -> f64 {
     0.5
+}
+
+fn default_stretch_name() -> bool {
+    true
 }
 
 impl Default for ViewSettings {
@@ -59,6 +109,8 @@ impl Default for ViewSettings {
         Self {
             row_scale: 1.0,
             split_ratio: default_split_ratio(),
+            column_widths: ColumnWidths::default(),
+            stretch_name: default_stretch_name(),
         }
     }
 }
@@ -101,6 +153,25 @@ mod tests {
         let view: ViewSettings = serde_json::from_str(old).expect("parse");
         assert_eq!(view.row_scale, 1.4);
         assert_eq!(view.split_ratio, 0.5, "an unsplit window starts even");
+        assert_eq!(
+            view.column_widths.size,
+            default_size_width(),
+            "columns nobody has dragged yet keep their default width"
+        );
+        assert!(view.stretch_name, "an untouched name column still fills the pane");
+    }
+
+    #[test]
+    fn column_widths_round_trip() {
+        let mut view = ViewSettings::default();
+        view.column_widths.name = 420.0;
+        view.stretch_name = false;
+        let raw = serde_json::to_string(&view).unwrap();
+        assert!(raw.contains("\"columnWidths\""), "widths are stored camelCase");
+        let back: ViewSettings = serde_json::from_str(&raw).unwrap();
+        assert_eq!(back.column_widths.name, 420.0);
+        assert_eq!(back.column_widths.time, default_time_width());
+        assert!(!back.stretch_name);
     }
 
     #[test]
