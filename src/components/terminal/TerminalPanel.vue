@@ -38,11 +38,30 @@ watch(
 )
 
 // --- "Add terminal" dropdown ---
+// The tab strip scrolls horizontally, so a menu anchored inside it would be
+// clipped away. It lives on the body instead, pinned to the button.
 const addDropdownOpen = ref(false)
 const addBtnRef = ref<HTMLElement | null>(null)
+const addMenuRef = ref<HTMLElement | null>(null)
+const MENU_WIDTH = 220
+const menuPos = ref({ left: 0, bottom: 0 })
+
+function placeMenu() {
+  const rect = addBtnRef.value?.getBoundingClientRect()
+  if (!rect) return
+  menuPos.value = {
+    left: Math.max(4, Math.min(rect.left, window.innerWidth - MENU_WIDTH - 8)),
+    bottom: window.innerHeight - rect.top + 4,
+  }
+}
 
 function toggleAddDropdown() {
-  addDropdownOpen.value = !addDropdownOpen.value
+  if (addDropdownOpen.value) {
+    addDropdownOpen.value = false
+    return
+  }
+  placeMenu()
+  addDropdownOpen.value = true
 }
 
 function pickShell(shellId: string) {
@@ -51,13 +70,24 @@ function pickShell(shellId: string) {
 }
 
 function onDocClick(e: MouseEvent) {
-  if (!addBtnRef.value?.contains(e.target as Node)) {
-    addDropdownOpen.value = false
-  }
+  const target = e.target as Node
+  if (addBtnRef.value?.contains(target)) return
+  if (addMenuRef.value?.contains(target)) return
+  addDropdownOpen.value = false
 }
 
-onMounted(() => window.addEventListener('mousedown', onDocClick, true))
-onUnmounted(() => window.removeEventListener('mousedown', onDocClick, true))
+function onWindowResize() {
+  if (addDropdownOpen.value) placeMenu()
+}
+
+onMounted(() => {
+  window.addEventListener('mousedown', onDocClick, true)
+  window.addEventListener('resize', onWindowResize)
+})
+onUnmounted(() => {
+  window.removeEventListener('mousedown', onDocClick, true)
+  window.removeEventListener('resize', onWindowResize)
+})
 
 // --- Drag-resizable panel height ---
 const height = ref(280)
@@ -107,20 +137,24 @@ function onResizeStart(e: MouseEvent) {
         </div>
         <div ref="addBtnRef" class="term-add-wrap">
           <button class="term-add" title="New terminal" @click="toggleAddDropdown">+</button>
-          <div v-if="addDropdownOpen" class="term-add-menu">
-            <template v-for="(t, i) in props.terminals" :key="t.id">
-              <div
-                v-if="i > 0 && props.terminals[i - 1]!.group !== t.group"
-                class="term-add-sep"
-              />
-              <button class="term-add-item" @click="pickShell(t.id)">
-                {{ t.label }}
-              </button>
-            </template>
-          </div>
         </div>
       </div>
     </div>
+    <Teleport to="body">
+      <div
+        v-if="addDropdownOpen"
+        ref="addMenuRef"
+        class="term-add-menu"
+        :style="{ left: menuPos.left + 'px', bottom: menuPos.bottom + 'px' }"
+      >
+        <template v-for="(t, i) in props.terminals" :key="t.id">
+          <div v-if="i > 0 && props.terminals[i - 1]!.group !== t.group" class="term-add-sep" />
+          <button class="term-add-item" @click="pickShell(t.id)">
+            {{ t.label }}
+          </button>
+        </template>
+      </div>
+    </Teleport>
     <!-- All terminals stay mounted; only the active one shows -->
     <TerminalView
       v-for="t in terminalsStore.terms"
@@ -248,11 +282,8 @@ function onResizeStart(e: MouseEvent) {
 }
 
 .term-add-menu {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 4px;
-  z-index: 200;
+  position: fixed;
+  z-index: 2000;
   min-width: 220px;
   background: #24243a;
   border: 1px solid #45475a;
