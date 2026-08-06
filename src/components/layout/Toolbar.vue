@@ -65,8 +65,8 @@ function onDocClick(e: MouseEvent) {
     terminalDropdownOpen.value = false
   }
 }
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
+onMounted(() => window.addEventListener('mousedown', onDocClick, true))
+onUnmounted(() => window.removeEventListener('mousedown', onDocClick, true))
 
 defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 </script>

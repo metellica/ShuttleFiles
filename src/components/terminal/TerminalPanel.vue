@@ -56,8 +56,8 @@ function onDocClick(e: MouseEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
+onMounted(() => window.addEventListener('mousedown', onDocClick, true))
+onUnmounted(() => window.removeEventListener('mousedown', onDocClick, true))
 
 // --- Drag-resizable panel height ---
 const height = ref(280)

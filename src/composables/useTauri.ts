@@ -47,6 +47,11 @@ export const clipboardReadFiles = () => invoke<ClipboardFiles>('clipboard_read_f
 
 export const clipboardHasFiles = () => invoke<boolean>('clipboard_has_files')
 
+export const clipboardWriteText = (text: string) =>
+  invoke<void>('clipboard_write_text', { text })
+
+export const clipboardReadText = () => invoke<string>('clipboard_read_text')
+
 // --- Native shell context menu (third-party extensions) ----------------------
 
 /**

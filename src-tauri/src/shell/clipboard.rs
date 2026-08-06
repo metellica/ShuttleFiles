@@ -27,18 +27,21 @@ mod imp {
     use std::ffi::c_void;
 
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{HANDLE, HGLOBAL};
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL, HWND};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
         OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::System::Memory::{
+        GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE,
+    };
     use windows::Win32::UI::Shell::{DragQueryFileW, DROPFILES, HDROP};
 
     use super::ClipboardFiles;
     use crate::error::{AppError, AppResult};
 
     const CF_HDROP: u32 = 15;
+    const CF_UNICODETEXT: u32 = 13;
     const DROPEFFECT_COPY: u32 = 1;
     const DROPEFFECT_MOVE: u32 = 2;
 
@@ -56,11 +59,12 @@ mod imp {
     struct ClipboardGuard;
 
     impl ClipboardGuard {
-        fn open() -> AppResult<Self> {
+        fn open(owner: isize) -> AppResult<Self> {
             // Another process may hold the clipboard for a moment; Explorer
             // itself retries the same way rather than failing outright.
             for attempt in 0..10 {
-                if unsafe { OpenClipboard(None) }.is_ok() {
+                let owner = (owner != 0).then_some(HWND(owner as *mut c_void));
+                if unsafe { OpenClipboard(owner) }.is_ok() {
                     return Ok(ClipboardGuard);
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1)));
@@ -82,6 +86,7 @@ mod imp {
             .map_err(|e| AppError::Io(format!("GlobalAlloc failed: {}", e)))?;
         let ptr = unsafe { GlobalLock(handle) };
         if ptr.is_null() {
+            let _ = unsafe { GlobalFree(Some(handle)) };
             return Err(AppError::Io("GlobalLock failed".into()));
         }
         unsafe {
@@ -89,6 +94,19 @@ mod imp {
             let _ = GlobalUnlock(handle);
         }
         Ok(handle)
+    }
+
+    unsafe fn set_data(format: u32, handle: HGLOBAL, label: &str) -> AppResult<()> {
+        match unsafe { SetClipboardData(format, Some(HANDLE(handle.0))) } {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let _ = unsafe { GlobalFree(Some(handle)) };
+                Err(AppError::Io(format!(
+                    "SetClipboardData({}) failed: {}",
+                    label, e
+                )))
+            }
+        }
     }
 
     /// `DROPFILES` header + double-NUL terminated wide path list.
@@ -121,35 +139,76 @@ mod imp {
         bytes
     }
 
-    pub fn write_files(paths: &[String], cut: bool) -> AppResult<()> {
+    pub fn write_files(paths: &[String], cut: bool, owner: isize) -> AppResult<()> {
         if paths.is_empty() {
             return Ok(());
         }
-        let _guard = ClipboardGuard::open()?;
+        let _guard = ClipboardGuard::open(owner)?;
         unsafe {
             EmptyClipboard().map_err(|e| AppError::Io(format!("EmptyClipboard failed: {}", e)))?;
 
             let hdrop = global_from_bytes(&build_hdrop(paths))?;
-            SetClipboardData(CF_HDROP, Some(HANDLE(hdrop.0)))
-                .map_err(|e| AppError::Io(format!("SetClipboardData failed: {}", e)))?;
+            set_data(CF_HDROP, hdrop, "files")?;
 
-            let effect: u32 = if cut { DROPEFFECT_MOVE } else { DROPEFFECT_COPY };
+            let effect: u32 = if cut {
+                DROPEFFECT_MOVE
+            } else {
+                DROPEFFECT_COPY
+            };
             let effect_handle = global_from_bytes(&effect.to_le_bytes())?;
             // Without this format every paste is treated as a copy.
-            SetClipboardData(
-                preferred_drop_effect_format(),
-                Some(HANDLE(effect_handle.0)),
-            )
-            .map_err(|e| AppError::Io(format!("SetClipboardData(effect) failed: {}", e)))?;
+            set_data(preferred_drop_effect_format(), effect_handle, "drop effect")?;
         }
         Ok(())
+    }
+
+    pub fn write_text(text: &str, owner: isize) -> AppResult<()> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let mut bytes = Vec::with_capacity((text.encode_utf16().count() + 1) * 2);
+        for unit in text.encode_utf16().chain(std::iter::once(0)) {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+
+        let _guard = ClipboardGuard::open(owner)?;
+        unsafe {
+            EmptyClipboard().map_err(|e| AppError::Io(format!("EmptyClipboard failed: {}", e)))?;
+            let text_handle = global_from_bytes(&bytes)?;
+            set_data(CF_UNICODETEXT, text_handle, "text")?;
+        }
+        Ok(())
+    }
+
+    pub fn read_text() -> AppResult<String> {
+        if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) }.is_err() {
+            return Ok(String::new());
+        }
+        let _guard = ClipboardGuard::open(0)?;
+        let handle = unsafe { GetClipboardData(CF_UNICODETEXT) }
+            .map_err(|e| AppError::Io(format!("GetClipboardData(text) failed: {}", e)))?;
+        let hglobal = HGLOBAL(handle.0);
+        let ptr = unsafe { GlobalLock(hglobal) } as *const u16;
+        if ptr.is_null() {
+            return Err(AppError::Io("GlobalLock(text) failed".into()));
+        }
+        let units = unsafe { std::slice::from_raw_parts(ptr, GlobalSize(hglobal) / 2) };
+        let end = units
+            .iter()
+            .position(|unit| *unit == 0)
+            .unwrap_or(units.len());
+        let text = String::from_utf16_lossy(&units[..end]);
+        unsafe {
+            let _ = GlobalUnlock(hglobal);
+        }
+        Ok(text)
     }
 
     pub fn read_files() -> AppResult<ClipboardFiles> {
         if unsafe { IsClipboardFormatAvailable(CF_HDROP) }.is_err() {
             return Ok(ClipboardFiles::default());
         }
-        let _guard = ClipboardGuard::open()?;
+        let _guard = ClipboardGuard::open(0)?;
 
         let handle = match unsafe { GetClipboardData(CF_HDROP) } {
             Ok(h) => h,
@@ -216,8 +275,9 @@ mod imp {
     use crate::error::AppResult;
 
     static FALLBACK: Mutex<Option<ClipboardFiles>> = Mutex::new(None);
+    static FALLBACK_TEXT: Mutex<String> = Mutex::new(String::new());
 
-    pub fn write_files(paths: &[String], cut: bool) -> AppResult<()> {
+    pub fn write_files(paths: &[String], cut: bool, _owner: isize) -> AppResult<()> {
         let mut slot = FALLBACK.lock().unwrap();
         *slot = Some(ClipboardFiles {
             paths: paths.to_vec(),
@@ -237,11 +297,20 @@ mod imp {
             .as_ref()
             .is_some_and(|c| !c.paths.is_empty())
     }
+
+    pub fn write_text(text: &str, _owner: isize) -> AppResult<()> {
+        *FALLBACK_TEXT.lock().unwrap() = text.to_string();
+        Ok(())
+    }
+
+    pub fn read_text() -> AppResult<String> {
+        Ok(FALLBACK_TEXT.lock().unwrap().clone())
+    }
 }
 
 /// Put a file selection on the clipboard. `cut` marks it as a move.
-pub async fn write_files(paths: Vec<String>, cut: bool) -> AppResult<()> {
-    tokio::task::spawn_blocking(move || imp::write_files(&paths, cut))
+pub async fn write_files(paths: Vec<String>, cut: bool, owner: isize) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || imp::write_files(&paths, cut, owner))
         .await
         .map_err(|e| crate::error::AppError::Io(format!("Clipboard task failed: {}", e)))?
 }
@@ -258,6 +327,18 @@ pub async fn has_files() -> bool {
         .unwrap_or(false)
 }
 
+pub async fn write_text(text: String, owner: isize) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || imp::write_text(&text, owner))
+        .await
+        .map_err(|e| crate::error::AppError::Io(format!("Clipboard task failed: {}", e)))?
+}
+
+pub async fn read_text() -> AppResult<String> {
+    tokio::task::spawn_blocking(imp::read_text)
+        .await
+        .map_err(|e| crate::error::AppError::Io(format!("Clipboard task failed: {}", e)))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,7 +353,7 @@ mod tests {
             "C:\\Users\\Public\\a b c.txt".to_string(),
         ];
 
-        if imp::write_files(&paths, true).is_err() {
+        if imp::write_files(&paths, true, 0).is_err() {
             // No window station (headless CI); nothing to verify.
             return;
         }
@@ -280,7 +361,7 @@ mod tests {
         assert_eq!(read.paths, paths);
         assert!(read.cut, "Preferred DropEffect should report a move");
 
-        imp::write_files(&paths, false).expect("write clipboard");
+        imp::write_files(&paths, false, 0).expect("write clipboard");
         let read = imp::read_files().expect("read clipboard");
         assert!(!read.cut, "a plain copy must not be reported as a move");
         assert!(imp::has_files());

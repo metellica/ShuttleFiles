@@ -76,6 +76,8 @@ pub fn run() {
             commands::clipboard::clipboard_write_files,
             commands::clipboard::clipboard_read_files,
             commands::clipboard::clipboard_has_files,
+            commands::clipboard::clipboard_write_text,
+            commands::clipboard::clipboard_read_text,
             commands::shellmenu::shell_menu_show,
             commands::shellmenu::shell_menu_list,
             commands::archive::archive_extensions,
