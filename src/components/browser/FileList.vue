@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { FileEntry, SearchHit } from '@/types/filesystem'
+import { ROOT } from '@/types/filesystem'
 import { fileIcon, formatSize, formatTime } from '@/composables/useFormat'
 import { COLUMN_KEYS, useViewSettingsStore, type ColumnKey } from '@/stores/viewSettings'
 
 const props = defineProps<{
   entries: FileEntry[] | SearchHit[]
+  currentPath?: string
   loading: boolean
   error: string
   /** Entries are ranked search hits, so relevance is the natural order. */
@@ -16,7 +18,10 @@ const emit = defineEmits<{
   open: [entry: FileEntry]
   context: [event: MouseEvent, entry: FileEntry | null]
   'selection-change': [paths: string[]]
+  move: [sources: string[], destDir: string]
 }>()
+
+const DND_MIME = 'application/x-shuttle-files-paths'
 
 /** `relevance` keeps the backend's ranking; it only exists while searching. */
 type SortKey = 'name' | 'size' | 'modified' | 'ext' | 'relevance'
@@ -155,6 +160,85 @@ function typeLabel(entry: FileEntry): string {
   return entry.ext ? `${entry.ext.toUpperCase()} file` : 'File'
 }
 
+const dropTargetDir = ref<string | null>(null)
+
+function normalizePath(path: string): string {
+  return path.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase()
+}
+
+/**
+ * Chromium only exposes the actual payload of `getData()` during
+ * `dragstart` and `drop`; a `dragover` handler reading it always gets an
+ * empty string. `types` stays readable throughout, so hover feedback
+ * checks that instead of trying (and failing) to read the paths early.
+ */
+function isFileDrag(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types
+  return !!types && Array.from(types).includes(DND_MIME)
+}
+
+function parseDragPaths(event: DragEvent): string[] {
+  const raw = event.dataTransfer?.getData(DND_MIME)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((p): p is string => typeof p === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function canMoveTo(sources: string[], destDir: string): boolean {
+  const dest = normalizePath(destDir)
+  return sources.length > 0 && sources.every((src) => {
+    const item = normalizePath(src)
+    return item !== dest && !dest.startsWith(`${item}\\`)
+  })
+}
+
+function onRowDragStart(entry: FileEntry, index: number, event: DragEvent) {
+  if (!selected.value.has(entry.path)) {
+    selected.value = new Set([entry.path])
+    anchorIndex.value = index
+    commitSelection()
+  }
+  const sources = selected.value.has(entry.path) ? [...selected.value] : [entry.path]
+  if (!event.dataTransfer || sources.length === 0) return
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData(DND_MIME, JSON.stringify(sources))
+  event.dataTransfer.setData('text/plain', sources.join('\n'))
+}
+
+function onRowDragOver(entry: FileEntry, event: DragEvent) {
+  if (!entry.isDir || !isFileDrag(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTargetDir.value = entry.path
+}
+
+function onRowDrop(entry: FileEntry, event: DragEvent) {
+  if (!entry.isDir) return
+  const sources = parseDragPaths(event)
+  event.preventDefault()
+  dropTargetDir.value = null
+  if (canMoveTo(sources, entry.path)) emit('move', sources, entry.path)
+}
+
+function onBodyDragOver(event: DragEvent) {
+  if (!props.currentPath || props.currentPath === ROOT || !isFileDrag(event)) return
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTargetDir.value = props.currentPath
+}
+
+function onBodyDrop(event: DragEvent) {
+  if (!props.currentPath || props.currentPath === ROOT) return
+  const sources = parseDragPaths(event)
+  event.preventDefault()
+  dropTargetDir.value = null
+  if (canMoveTo(sources, props.currentPath)) emit('move', sources, props.currentPath)
+}
+
 /*
  * Column layout. Widths are stored unscaled and multiplied by the row
  * scale here, so zooming the rows keeps the columns in proportion.
@@ -279,7 +363,13 @@ defineExpose({
           <div class="col filler" :style="fillerStyle" />
         </div>
 
-        <div class="body" @contextmenu.self.prevent="onBlankContext">
+        <div
+          class="body"
+          @contextmenu.self.prevent="onBlankContext"
+          @dragover="onBodyDragOver"
+          @drop="onBodyDrop"
+          @dragleave="dropTargetDir = null"
+        >
           <div v-if="loading" class="notice">Loading…</div>
           <div v-else-if="error" class="notice error">{{ error }}</div>
           <div v-else-if="sorted.length === 0" class="notice">
@@ -291,10 +381,20 @@ defineExpose({
             v-else
             :key="entry.path"
             class="row"
-            :class="{ selected: selected.has(entry.path), hidden: entry.isHidden }"
+            :class="{
+              selected: selected.has(entry.path),
+              hidden: entry.isHidden,
+              'drop-dir': dropTargetDir === entry.path,
+            }"
+            draggable="true"
             @click="onRowClick(entry, index, $event)"
             @dblclick="emit('open', entry)"
             @contextmenu.prevent.stop="onRowContext(entry, index, $event)"
+            @dragstart="onRowDragStart(entry, index, $event)"
+            @dragover="onRowDragOver(entry, $event)"
+            @drop="onRowDrop(entry, $event)"
+            @dragleave="dropTargetDir = null"
+            @dragend="dropTargetDir = null"
           >
             <div class="col name" :style="colStyle('name')">
               <span class="icon">{{ fileIcon(entry.ext, entry.isDir) }}</span>
@@ -447,6 +547,11 @@ defineExpose({
 
 .row.selected {
   background: #2c3a5c;
+}
+
+.row.drop-dir {
+  outline: 1px dashed #89b4fa;
+  outline-offset: -1px;
 }
 
 .row.hidden .label {

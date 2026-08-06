@@ -233,6 +233,15 @@ async function doPaste() {
   }
 }
 
+async function moveDroppedEntries(sources: string[], destDir: string) {
+  if (insideArchive.value || !destDir || sources.length === 0) return
+  try {
+    await ops.start('move', sources, destDir)
+  } catch (e) {
+    error.value = String(e)
+  }
+}
+
 async function doDelete() {
   const targets = [...selection.value]
   if (targets.length === 0 || insideArchive.value) return
@@ -700,12 +709,14 @@ defineExpose({
       v-else
       ref="listRef"
       :entries="visibleEntries"
+      :current-path="props.path"
       :loading="loading"
       :error="error || search.error.value"
       :search-mode="searchMode"
       @open="open"
       @context="openContextMenu"
       @selection-change="selection = $event"
+      @move="moveDroppedEntries"
     />
     <ContextMenu
       :visible="ctx.visible"

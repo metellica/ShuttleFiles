@@ -12,6 +12,8 @@ const focused = computed(() => !tabsStore.split || tabsStore.activePaneId === pr
 
 const dragIndex = ref<number | null>(null)
 const dropIndex = ref<number | null>(null)
+const fileDragTabId = ref<string | null>(null)
+const FILE_DND_MIME = 'application/x-shuttle-files-paths'
 
 const ctx = ref({ visible: false, x: 0, y: 0, items: [] as MenuItem[] })
 
@@ -101,16 +103,38 @@ function onDragStart(index: number, event: DragEvent) {
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
 }
 
-function onDragOver(index: number, event: DragEvent) {
-  if (dragIndex.value === null) return
-  event.preventDefault()
-  dropIndex.value = index
+function hasFileDrag(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types
+  return !!types && Array.from(types).includes(FILE_DND_MIME)
 }
 
-function onDrop(index: number) {
+function onDragOver(index: number, tabId: string, event: DragEvent) {
+  if (dragIndex.value !== null) {
+    event.preventDefault()
+    dropIndex.value = index
+    return
+  }
+  if (!hasFileDrag(event)) return
+  event.preventDefault()
+  fileDragTabId.value = tabId
+  if (props.pane.activeTabId !== tabId) tabsStore.setActiveTab(tabId)
+}
+
+function onDrop(index: number, tabId: string, event: DragEvent) {
   if (dragIndex.value !== null) tabsStore.moveTab(props.pane.id, dragIndex.value, index)
+  else if (hasFileDrag(event)) {
+    event.preventDefault()
+    tabsStore.setActiveTab(tabId)
+  }
   dragIndex.value = null
   dropIndex.value = null
+  fileDragTabId.value = null
+}
+
+function onDragEnd() {
+  dragIndex.value = null
+  dropIndex.value = null
+  fileDragTabId.value = null
 }
 
 /** Middle-click closes, matching browser behaviour. Locked tabs are protected. */
@@ -131,6 +155,7 @@ function onMouseDown(tabId: string, event: MouseEvent) {
       :class="{
         active: tab.id === props.pane.activeTabId,
         'drop-target': dropIndex === index && dragIndex !== index,
+        'file-drag-target': fileDragTabId === tab.id && dragIndex === null,
         locked: tab.lock === 'locked',
         'soft-locked': tab.lock === 'locked-allow-dirs',
         strayed: hasStrayed(tab),
@@ -141,9 +166,9 @@ function onMouseDown(tabId: string, event: MouseEvent) {
       @mousedown="onMouseDown(tab.id, $event)"
       @contextmenu.prevent="openTabMenu(tab, $event)"
       @dragstart="onDragStart(index, $event)"
-      @dragover="onDragOver(index, $event)"
-      @drop="onDrop(index)"
-      @dragend="dragIndex = null; dropIndex = null"
+      @dragover="onDragOver(index, tab.id, $event)"
+      @drop="onDrop(index, tab.id, $event)"
+      @dragend="onDragEnd"
     >
       <span v-if="tab.lock !== 'none'" class="tab-lock">
         {{ tab.lock === 'locked' ? '🔒' : '🔐' }}<span class="tab-lock-mark">{{ lockBadge(tab) }}</span>
@@ -220,6 +245,10 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 .tab.drop-target {
   outline: 1px dashed #89b4fa;
   outline-offset: -2px;
+}
+
+.tab.file-drag-target {
+  box-shadow: inset 0 -2px 0 #89b4fa;
 }
 
 .tab.locked {
