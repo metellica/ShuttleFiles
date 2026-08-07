@@ -8,6 +8,8 @@ import { COLUMN_KEYS, useViewSettingsStore, type ColumnKey } from '@/stores/view
 const props = defineProps<{
   entries: FileEntry[] | SearchHit[]
   currentPath?: string
+  /** Folder ".." leads to; absent (or during a search) hides that row. */
+  parentPath?: string | null
   loading: boolean
   error: string
   /** Entries are ranked search hits, so relevance is the natural order. */
@@ -160,6 +162,26 @@ function typeLabel(entry: FileEntry): string {
   return entry.ext ? `${entry.ext.toUpperCase()} file` : 'File'
 }
 
+/**
+ * A synthetic ".." row for stepping up a level. Kept out of `sorted` (and
+ * out of `selected`) since it isn't a real entry — just a shortcut that
+ * always sits above whatever the folder actually contains. Search hits
+ * come from all over the tree, so a parent link makes no sense among them.
+ */
+const parentEntry = computed<FileEntry | null>(() => {
+  if (props.searchMode || props.parentPath == null) return null
+  return {
+    name: '..',
+    path: props.parentPath,
+    isDir: true,
+    isSymlink: false,
+    isHidden: false,
+    size: 0,
+    modified: 0,
+    ext: '',
+  }
+})
+
 const dropTargetDir = ref<string | null>(null)
 
 function normalizePath(path: string): string {
@@ -196,6 +218,37 @@ function canMoveTo(sources: string[], destDir: string): boolean {
   })
 }
 
+/** How long a drag has to dwell on a folder before it springs open. */
+const HOVER_OPEN_DELAY = 700
+let hoverTimer: ReturnType<typeof setTimeout> | null = null
+const hoverDirPath = ref<string | null>(null)
+
+/**
+ * Stepping into a folder mid-drag — holding the button down over it
+ * instead of releasing — is what lets a drop reach a destination several
+ * levels deeper without a separate trip to get there first.
+ */
+function armHoverOpen(entry: FileEntry) {
+  if (hoverDirPath.value === entry.path) return
+  clearHoverOpen()
+  hoverDirPath.value = entry.path
+  hoverTimer = setTimeout(() => {
+    hoverTimer = null
+    hoverDirPath.value = null
+    emit('open', entry)
+  }, HOVER_OPEN_DELAY)
+}
+
+function clearHoverOpen() {
+  if (hoverTimer !== null) {
+    clearTimeout(hoverTimer)
+    hoverTimer = null
+  }
+  hoverDirPath.value = null
+}
+
+onBeforeUnmount(clearHoverOpen)
+
 function onRowDragStart(entry: FileEntry, index: number, event: DragEvent) {
   if (!selected.value.has(entry.path)) {
     selected.value = new Set([entry.path])
@@ -212,8 +265,12 @@ function onRowDragStart(entry: FileEntry, index: number, event: DragEvent) {
 function onRowDragOver(entry: FileEntry, event: DragEvent) {
   if (!entry.isDir || !isFileDrag(event)) return
   event.preventDefault()
+  // `dragover` bubbles continuously (many times a second) while the
+  // pointer sits still over the row. Left unstopped, every one of those
+  // ticks would also hit the body's `dragover` handler below and clear
+  // the hover-open timer this row just armed, so it could never fire.
+  event.stopPropagation()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-  dropTargetDir.value = entry.path
 }
 
 function onRowDrop(entry: FileEntry, event: DragEvent) {
@@ -221,7 +278,71 @@ function onRowDrop(entry: FileEntry, event: DragEvent) {
   const sources = parseDragPaths(event)
   event.preventDefault()
   dropTargetDir.value = null
+  clearHoverOpen()
   if (canMoveTo(sources, entry.path)) emit('move', sources, entry.path)
+}
+
+function onRowDragEnter(entry: FileEntry, event: DragEvent) {
+  if (!entry.isDir || !isFileDrag(event)) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTargetDir.value = entry.path
+  armHoverOpen(entry)
+}
+
+/**
+ * `dragleave` fires on every child element, not just the row boundary.
+ * Checking `relatedTarget` keeps the drop highlight and hover timer alive
+ * while the pointer is still somewhere inside the row. Bubbling is stopped
+ * whenever the pointer is judged to still be inside *some* row, so a leave
+ * that's purely internal reshuffling never reaches the body-level handler
+ * below and cancels a timer it has no business touching.
+ *
+ * Non-directory rows never arm anything (`onRowDragEnter`/`onRowDragOver`
+ * bail out for them too), so their leave events are left alone to bubble
+ * normally — otherwise the body-level fallback would never learn the drag
+ * left the list while it was last over a file row, and the drop highlight
+ * would stick around forever.
+ */
+function onRowDragLeave(entry: FileEntry, event: DragEvent) {
+  if (!entry.isDir) return
+  const row = event.currentTarget as HTMLElement | null
+  const related = event.relatedTarget as HTMLElement | null
+  // Child-element ghost: the pointer is still inside the same row. This is
+  // the common case — real cursors jitter across the icon/label/column
+  // child elements even while "holding still", firing dragleave+dragenter
+  // pairs constantly. Left unstopped, every one of those would bubble up
+  // and wipe the hover-open timer the very tick after it was armed.
+  if (related && row && row.contains(related)) {
+    event.stopPropagation()
+    return
+  }
+  // Only clear when the pointer leaves the row we are actually hovering.
+  // Without this, the dragleave from some other row would cancel the timer
+  // that dragenter just armed on the target row.
+  const path = row?.dataset.path
+  if (path && hoverDirPath.value !== path) {
+    event.stopPropagation()
+    return
+  }
+  dropTargetDir.value = null
+  clearHoverOpen()
+}
+
+/**
+ * Body-level fallback for drop-target highlighting and the hover timer.
+ * Only fires when the pointer leaves the list entirely (or lands on a
+ * non-row area like the blank space below the last entry) — moving
+ * between rows is fully handled by `onRowDragLeave`/`onRowDragEnter`, so
+ * this must not blindly clear on every bubbled `dragleave`.
+ */
+function onBodyDragLeave(event: DragEvent) {
+  const body = event.currentTarget as HTMLElement | null
+  const related = event.relatedTarget as HTMLElement | null
+  if (related && body && body.contains(related)) return
+  dropTargetDir.value = null
+  clearHoverOpen()
 }
 
 function onBodyDragOver(event: DragEvent) {
@@ -229,6 +350,7 @@ function onBodyDragOver(event: DragEvent) {
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
   dropTargetDir.value = props.currentPath
+  clearHoverOpen()
 }
 
 function onBodyDrop(event: DragEvent) {
@@ -236,6 +358,7 @@ function onBodyDrop(event: DragEvent) {
   const sources = parseDragPaths(event)
   event.preventDefault()
   dropTargetDir.value = null
+  clearHoverOpen()
   if (canMoveTo(sources, props.currentPath)) emit('move', sources, props.currentPath)
 }
 
@@ -368,8 +491,30 @@ defineExpose({
           @contextmenu.self.prevent="onBlankContext"
           @dragover="onBodyDragOver"
           @drop="onBodyDrop"
-          @dragleave="dropTargetDir = null"
+          @dragleave="onBodyDragLeave"
         >
+          <div
+            v-if="parentEntry"
+            class="row parent-row"
+            :data-path="parentEntry.path"
+            :class="{ 'drop-dir': dropTargetDir === parentEntry.path }"
+            @dblclick="emit('open', parentEntry)"
+            @dragenter="onRowDragEnter(parentEntry, $event)"
+            @dragover="onRowDragOver(parentEntry, $event)"
+            @drop="onRowDrop(parentEntry, $event)"
+            @dragleave="onRowDragLeave(parentEntry, $event)"
+            @dragend="dropTargetDir = null; clearHoverOpen()"
+          >
+            <div class="col name" :style="colStyle('name')">
+              <span class="icon">{{ fileIcon(parentEntry.ext, parentEntry.isDir) }}</span>
+              <span class="label">..</span>
+            </div>
+            <div class="col size" :style="colStyle('size')" />
+            <div class="col type" :style="colStyle('type')">Folder</div>
+            <div class="col time" :style="colStyle('time')" />
+            <div class="col filler" :style="fillerStyle" />
+          </div>
+
           <div v-if="loading" class="notice">Loading…</div>
           <div v-else-if="error" class="notice error">{{ error }}</div>
           <div v-else-if="sorted.length === 0" class="notice">
@@ -381,6 +526,7 @@ defineExpose({
             v-else
             :key="entry.path"
             class="row"
+            :data-path="entry.path"
             :class="{
               selected: selected.has(entry.path),
               hidden: entry.isHidden,
@@ -391,10 +537,11 @@ defineExpose({
             @dblclick="emit('open', entry)"
             @contextmenu.prevent.stop="onRowContext(entry, index, $event)"
             @dragstart="onRowDragStart(entry, index, $event)"
+            @dragenter="onRowDragEnter(entry, $event)"
             @dragover="onRowDragOver(entry, $event)"
             @drop="onRowDrop(entry, $event)"
-            @dragleave="dropTargetDir = null"
-            @dragend="dropTargetDir = null"
+            @dragleave="onRowDragLeave(entry, $event)"
+            @dragend="dropTargetDir = null; clearHoverOpen()"
           >
             <div class="col name" :style="colStyle('name')">
               <span class="icon">{{ fileIcon(entry.ext, entry.isDir) }}</span>

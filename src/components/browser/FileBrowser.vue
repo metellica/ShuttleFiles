@@ -36,6 +36,7 @@ const archives = useArchivesStore()
 const search = useFuzzySearch()
 
 const entries = ref<FileEntry[]>([])
+const parentPath = ref<string | null>(null)
 const terminals = ref<Awaited<ReturnType<typeof api.listTerminals>>>([])
 // Fetch once on mount; the backend caches internally.
 api.listTerminals().then((t) => (terminals.value = t)).catch(() => {})
@@ -77,6 +78,7 @@ const visibleEntries = computed<FileEntry[]>(() => {
 async function load() {
   if (props.path === ROOT) {
     entries.value = []
+    parentPath.value = null
     error.value = ''
     return
   }
@@ -87,9 +89,11 @@ async function load() {
     const listing = await api.listDir(props.path)
     if (id !== requestId) return
     entries.value = listing.entries
+    parentPath.value = listing.parent
   } catch (e) {
     if (id !== requestId) return
     entries.value = []
+    parentPath.value = null
     error.value = String(e)
   } finally {
     if (id === requestId) loading.value = false
@@ -710,6 +714,7 @@ defineExpose({
       ref="listRef"
       :entries="visibleEntries"
       :current-path="props.path"
+      :parent-path="parentPath"
       :loading="loading"
       :error="error || search.error.value"
       :search-mode="searchMode"
