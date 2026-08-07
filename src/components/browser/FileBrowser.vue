@@ -127,30 +127,46 @@ watch(
 
 onUnmounted(() => search.dispose())
 
-function open(entry: FileEntry) {
+/**
+ * Steps into a folder or archive instead of opening it, when that is
+ * what the entry calls for. Returns whether it did, so callers know
+ * whether there is still a file left to open.
+ */
+function navigateInsteadOfOpen(entry: FileEntry): boolean {
   if (entry.isDir) {
     emit('navigate', entry.path)
-    return
+    return true
   }
   if (insideArchive.value) {
     openArchiveMember(entry)
-    return
+    return true
   }
-  // An archive browses like a folder, so a double click steps into it
-  // rather than handing it to whatever has the association.
+  // An archive browses like a folder, so stepping into it takes
+  // precedence over handing it to whatever has the association.
   if (archives.isArchiveFile(entry)) {
     emit('navigate', archiveRoot(entry.path))
-    return
+    return true
   }
+  return false
+}
+
+function open(entry: FileEntry) {
+  if (navigateInsteadOfOpen(entry)) return
   // Double-click always opens with the system default handler.
   reportOpenFailure(api.openEntryPath(entry.path), entry.name)
+}
+
+/** The context menu's first row: the configured editor when there is one. */
+function editEntry(entry: FileEntry) {
+  if (navigateInsteadOfOpen(entry)) return
+  reportOpenFailure(openWith.openEntry(entry), entry.name)
 }
 
 /**
  * Whether the default action hands the file to the configured editor
  * rather than to a folder view or the association. The menu then says
  * "Edit", which is both what happens and what tells the row apart from
- * "Open with System Default" underneath it.
+ * "Open with System Default" above it.
  */
 function opensForEditing(entry: FileEntry): boolean {
   if (entry.isDir) return false
@@ -514,12 +530,6 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
   const targets = entry ? selectionOr(entry) : []
   const items: MenuItem[] = entry
     ? [
-        {
-          label: editing ? 'Edit' : 'Open',
-          // Not the pencil: Rename further down already wears it.
-          icon: editing ? '📝' : '↩',
-          action: () => open(entry),
-        },
         ...(openWith.programFor(entry) || (!readOnly && archives.isArchiveFile(entry))
           ? [
               {
@@ -529,6 +539,12 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
               },
             ]
           : []),
+        {
+          label: editing ? 'Edit' : 'Open',
+          // Not the pencil: Rename further down already wears it.
+          icon: editing ? '📝' : '↩',
+          action: () => editEntry(entry),
+        },
         ...(hasVscode && !readOnly
           ? [
               {

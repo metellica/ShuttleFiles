@@ -11,9 +11,9 @@ import {
 /**
  * The program text files open with, and which extensions count as text.
  *
- * Every way of opening a file in the app — double click, the context
- * menu, Enter — goes through {@link openEntry}, so one setting covers
- * them all without touching Windows' per-extension associations.
+ * The context menu's "Edit" row and a viewed archive member go through
+ * {@link openEntry}. Double-click is the exception: it always opens
+ * with the system default, regardless of this setting.
  */
 export const useOpenWithStore = defineStore('openWith', () => {
   const textEditor = ref('')
