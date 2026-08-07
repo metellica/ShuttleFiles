@@ -188,6 +188,12 @@ function normalizePath(path: string): string {
   return path.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase()
 }
 
+/** Containing folder of a normalized path, or '' if it has no separator. */
+function parentOf(normalizedPath: string): string {
+  const idx = normalizedPath.lastIndexOf('\\')
+  return idx === -1 ? '' : normalizedPath.slice(0, idx)
+}
+
 /**
  * Chromium only exposes the actual payload of `getData()` during
  * `dragstart` and `drop`; a `dragover` handler reading it always gets an
@@ -210,11 +216,18 @@ function parseDragPaths(event: DragEvent): string[] {
   }
 }
 
+/**
+ * Moving into itself, into a descendant, or right back into the folder
+ * it's already sitting in are all no-ops the backend would otherwise turn
+ * into something surprising: a same-folder drop collides with the source
+ * itself, so the paste logic's collision-avoidance renames the file
+ * (`report.txt` -> `report (2).txt`) instead of doing nothing.
+ */
 function canMoveTo(sources: string[], destDir: string): boolean {
   const dest = normalizePath(destDir)
   return sources.length > 0 && sources.every((src) => {
     const item = normalizePath(src)
-    return item !== dest && !dest.startsWith(`${item}\\`)
+    return item !== dest && !dest.startsWith(`${item}\\`) && parentOf(item) !== dest
   })
 }
 
