@@ -427,16 +427,16 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4f6ec2;
+  background: var(--scrollbar-thumb);
   border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b8ae0;
+  background: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-thumb:active {
-  background: #89b4fa;
+  background: var(--scrollbar-thumb-active);
 }
 
 ::-webkit-scrollbar-corner {
@@ -455,8 +455,8 @@ body.splitting {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #1e1e2e;
-  color: #cdd6f4;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .content {
@@ -472,9 +472,9 @@ body.splitting {
 }
 
 .tab-bars-gap {
-  background: #181825;
-  border-bottom: 1px solid #313244;
-  border-left: 1px solid #313244;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 
 .pane {
@@ -490,17 +490,17 @@ body.splitting {
   content: '';
   position: absolute;
   inset: 0;
-  border-top: 2px solid #89b4fa;
+  border-top: 2px solid var(--accent);
   pointer-events: none;
 }
 
 .splitter {
-  background: #313244;
+  background: var(--border);
   cursor: col-resize;
 }
 
 .splitter:hover {
-  background: #89b4fa;
+  background: var(--accent);
 }
 
 .status {
@@ -509,10 +509,10 @@ body.splitting {
   gap: 6px;
   height: 24px;
   padding: 0 10px;
-  background: #181825;
-  border-top: 1px solid #313244;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
   font-size: 11px;
-  color: #6c7086;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 

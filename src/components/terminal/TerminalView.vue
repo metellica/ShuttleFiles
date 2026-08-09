@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useThemeStore } from '@/stores/theme'
 import {
   clipboardReadText,
   clipboardWriteText,
@@ -13,6 +14,22 @@ import {
   terminalResize,
   terminalClose,
 } from '@/composables/useTauri'
+
+const themeStore = useThemeStore()
+
+/** Read a CSS custom property from the document root. */
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+function terminalTheme() {
+  return {
+    background: cssVar('--bg-secondary'),
+    foreground: cssVar('--text-primary'),
+    cursor: cssVar('--text-primary'),
+    selectionBackground: cssVar('--text-disabled'),
+  }
+}
 
 const props = defineProps<{
   shellId: string
@@ -97,12 +114,7 @@ onMounted(async () => {
     fontSize: 13,
     fontFamily: 'Consolas, "Cascadia Mono", Menlo, monospace',
     cursorBlink: true,
-    theme: {
-      background: '#181825',
-      foreground: '#cdd6f4',
-      cursor: '#cdd6f4',
-      selectionBackground: '#45475a',
-    },
+    theme: terminalTheme(),
   })
   fit = new FitAddon()
   term.loadAddon(fit)
@@ -214,7 +226,7 @@ onBeforeUnmount(() => {
 
 .term-error {
   padding: 12px;
-  color: #f38ba8;
+  color: var(--error);
   font-size: 12px;
 }
 

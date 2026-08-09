@@ -106,8 +106,8 @@ function isActive(job: JobState): boolean {
 
 <style scoped>
 .op-bar {
-  background: #181825;
-  border-top: 1px solid #313244;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
   flex-shrink: 0;
   max-height: 40vh;
   display: flex;
@@ -121,7 +121,7 @@ function isActive(job: JobState): boolean {
   width: 100%;
   background: none;
   border: none;
-  color: #a6adc8;
+  color: var(--text-secondary);
   font-family: inherit;
   font-size: 11px;
   padding: 5px 10px;
@@ -130,11 +130,11 @@ function isActive(job: JobState): boolean {
 }
 
 .summary:hover {
-  background: #1e1e2e;
+  background: var(--bg-primary);
 }
 
 .chevron {
-  color: #6c7086;
+  color: var(--text-muted);
   width: 10px;
 }
 
@@ -144,7 +144,7 @@ function isActive(job: JobState): boolean {
 
 .summary-pct,
 .summary-speed {
-  color: #6c7086;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -152,7 +152,7 @@ function isActive(job: JobState): boolean {
   flex: 1;
   min-width: 60px;
   height: 4px;
-  background: #313244;
+  background: var(--border);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -167,13 +167,13 @@ function isActive(job: JobState): boolean {
 .fill {
   display: block;
   height: 100%;
-  background: #89b4fa;
+  background: var(--accent);
   transition: width 0.15s linear;
 }
 
 .jobs {
   overflow-y: auto;
-  border-top: 1px solid #313244;
+  border-top: 1px solid var(--border);
 }
 
 .job {
@@ -182,19 +182,19 @@ function isActive(job: JobState): boolean {
   gap: 8px;
   padding: 6px 10px;
   font-size: 11px;
-  border-bottom: 1px solid #24243a;
+  border-bottom: 1px solid var(--bg-panel);
 }
 
 .job.failed .fill {
-  background: #f38ba8;
+  background: var(--error);
 }
 
 .job.completed .fill {
-  background: #a6e3a1;
+  background: var(--success);
 }
 
 .job.cancelled .fill {
-  background: #6c7086;
+  background: var(--text-muted);
 }
 
 .icon {
@@ -203,11 +203,11 @@ function isActive(job: JobState): boolean {
 }
 
 .job.failed .icon {
-  color: #f38ba8;
+  color: var(--error);
 }
 
 .job.completed .icon {
-  color: #a6e3a1;
+  color: var(--success);
 }
 
 .body {
@@ -222,32 +222,32 @@ function isActive(job: JobState): boolean {
 }
 
 .label {
-  color: #cdd6f4;
+  color: var(--text-primary);
   flex-shrink: 0;
 }
 
 .current {
-  color: #a6adc8;
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .detail {
-  color: #6c7086;
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .job.failed .detail {
-  color: #f38ba8;
+  color: var(--error);
 }
 
 .action {
   background: none;
   border: none;
-  color: #6c7086;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 13px;
   padding: 2px 4px;
@@ -255,6 +255,6 @@ function isActive(job: JobState): boolean {
 }
 
 .action:hover {
-  color: #f38ba8;
+  color: var(--error);
 }
 </style>

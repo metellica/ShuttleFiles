@@ -106,7 +106,7 @@ async function save() {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -114,20 +114,20 @@ async function save() {
 }
 
 .dialog {
-  background: #24243a;
-  border: 1px solid #45475a;
+  background: var(--bg-panel);
+  border: 1px solid var(--text-disabled);
   border-radius: 8px;
   padding: 16px;
   width: 520px;
   max-height: 90vh;
   overflow: auto;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 32px var(--shadow-md);
 }
 
 h3 {
   font-size: 13px;
   font-weight: 500;
-  color: #cdd6f4;
+  color: var(--text-primary);
   margin-bottom: 12px;
 }
 
@@ -138,7 +138,7 @@ section {
 label {
   display: block;
   font-size: 12px;
-  color: #a6adc8;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
@@ -156,10 +156,10 @@ input,
 textarea {
   flex: 1;
   width: 100%;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 8px;
@@ -174,24 +174,24 @@ textarea {
 
 input:focus,
 textarea:focus {
-  border-color: #89b4fa;
+  border-color: var(--accent);
 }
 
 .hint {
   font-size: 11px;
-  color: #6c7086;
+  color: var(--text-muted);
   margin-top: 6px;
   line-height: 1.5;
 }
 
 code {
   font-family: 'Cascadia Code', Consolas, monospace;
-  color: #a6adc8;
+  color: var(--text-secondary);
 }
 
 .error {
   font-size: 12px;
-  color: #f38ba8;
+  color: var(--error);
   margin-bottom: 10px;
 }
 
@@ -202,9 +202,9 @@ code {
 }
 
 .btn {
-  background: #313244;
+  background: var(--border);
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 14px;
@@ -214,27 +214,27 @@ code {
 }
 
 .btn:hover:not(:disabled) {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .btn:disabled {
-  color: #45475a;
+  color: var(--text-disabled);
   cursor: default;
 }
 
 .btn.primary {
-  background: #89b4fa;
-  color: #1e1e2e;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #6b8ae0;
+  background: var(--accent-hover);
 }
 
 .link {
   background: none;
   border: none;
-  color: #89b4fa;
+  color: var(--accent);
   font-size: 11px;
   font-family: inherit;
   cursor: pointer;

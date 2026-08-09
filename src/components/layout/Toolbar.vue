@@ -2,7 +2,10 @@
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import PathBar from '@/components/browser/PathBar.vue'
 import DensityControl from '@/components/layout/DensityControl.vue'
+import { useThemeStore } from '@/stores/theme'
 import type { TerminalEntry } from '@/types/terminal'
+
+const theme = useThemeStore()
 
 const props = defineProps<{
   path: string
@@ -167,6 +170,13 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
         </template>
       </div>
     </div>
+    <button
+      class="nav-btn"
+      :title="theme.theme === 'dark' ? 'Light mode' : 'Dark mode'"
+      @click="theme.toggle()"
+    >
+      {{ theme.theme === 'dark' ? '☀' : '☾' }}
+    </button>
     <button class="nav-btn" title="Settings" @click="emit('settings')">⚙</button>
   </div>
 </template>
@@ -177,15 +187,15 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
   align-items: center;
   gap: 4px;
   padding: 5px 8px;
-  background: #1e1e2e;
-  border-bottom: 1px solid #313244;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--surface);
   flex-shrink: 0;
 }
 
 .nav-btn {
   background: none;
   border: 1px solid transparent;
-  color: #cdd6f4;
+  color: var(--text-primary);
   cursor: pointer;
   font-size: 13px;
   width: 26px;
@@ -196,31 +206,31 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 }
 
 .nav-btn:hover:not(:disabled) {
-  background: #313244;
+  background: var(--surface);
 }
 
 .nav-btn:disabled {
-  color: #45475a;
+  color: var(--text-disabled);
   cursor: default;
 }
 
 .nav-btn.starred {
-  color: #f9e2af;
+  color: var(--warning);
 }
 
 .nav-btn.on {
-  color: #89b4fa;
-  background: #313244;
+  color: var(--accent);
+  background: var(--surface);
 }
 
 .filter {
   width: 140px;
   height: 26px;
   flex-shrink: 0;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--surface);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 0 8px;
@@ -229,7 +239,7 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 }
 
 .filter:focus {
-  border-color: #89b4fa;
+  border-color: var(--accent);
 }
 
 .find {
@@ -244,7 +254,7 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
   position: absolute;
   right: 32px;
   font-size: 10px;
-  color: #6c7086;
+  color: var(--text-muted);
   pointer-events: none;
 }
 
@@ -253,8 +263,8 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 }
 
 .recurse.on {
-  color: #89b4fa;
-  background: #313244;
+  color: var(--accent);
+  background: var(--surface);
 }
 
 .terminal-dropdown {
@@ -269,10 +279,10 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
   margin-top: 4px;
   z-index: 200;
   min-width: 220px;
-  background: #24243a;
-  border: 1px solid #45475a;
+  background: var(--bg-panel);
+  border: 1px solid var(--text-disabled);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 16px var(--shadow-sm);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -283,7 +293,7 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
   width: 100%;
   background: none;
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   text-align: left;
   padding: 6px 10px;
   font-size: 12px;
@@ -293,12 +303,12 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
 }
 
 .terminal-item:hover {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .terminal-sep {
   height: 1px;
-  background: #45475a;
+  background: var(--text-disabled);
   margin: 4px 6px;
 }
 </style>

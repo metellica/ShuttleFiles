@@ -646,8 +646,8 @@ defineExpose({
 
 .head {
   display: flex;
-  border-bottom: 1px solid #313244;
-  background: #181825;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -675,7 +675,7 @@ defineExpose({
   min-width: 0;
   background: none;
   border: none;
-  color: #a6adc8;
+  color: var(--text-secondary);
   font-size: calc(11px * var(--row-scale));
   font-family: inherit;
   text-align: inherit;
@@ -691,7 +691,7 @@ defineExpose({
 }
 
 .head .sort:hover {
-  color: #89b4fa;
+  color: var(--accent);
 }
 
 /* Kept inside the cell so the last column's handle cannot fall off the pane. */
@@ -712,12 +712,12 @@ defineExpose({
   right: 0;
   width: 1px;
   height: 70%;
-  background: #313244;
+  background: var(--border);
 }
 
 .grip:hover::after,
 .grip.active::after {
-  background: #89b4fa;
+  background: var(--accent);
   width: 2px;
 }
 
@@ -729,21 +729,21 @@ defineExpose({
   display: flex;
   align-items: center;
   font-size: calc(12px * var(--row-scale));
-  color: #cdd6f4;
+  color: var(--text-primary);
   cursor: default;
   border-bottom: 1px solid transparent;
 }
 
 .row:hover {
-  background: #242438;
+  background: var(--bg-hover);
 }
 
 .row.selected {
-  background: #2c3a5c;
+  background: var(--bg-selected);
 }
 
 .row.drop-dir {
-  outline: 1px dashed #89b4fa;
+  outline: 1px dashed var(--accent);
   outline-offset: -1px;
 }
 
@@ -768,15 +768,15 @@ defineExpose({
 
 .col.size {
   text-align: right;
-  color: #a6adc8;
+  color: var(--text-secondary);
 }
 
 .col.type {
-  color: #a6adc8;
+  color: var(--text-secondary);
 }
 
 .col.time {
-  color: #a6adc8;
+  color: var(--text-secondary);
 }
 
 .col.filler {
@@ -794,28 +794,28 @@ defineExpose({
 }
 
 .mark {
-  color: #f9e2af;
+  color: var(--warning);
   font-weight: 600;
 }
 
 .rank-hint {
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 0.9em;
 }
 
 .link-badge {
-  color: #89b4fa;
+  color: var(--accent);
   font-size: calc(10px * var(--row-scale));
 }
 
 .notice {
   padding: 24px;
   text-align: center;
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
 .notice.error {
-  color: #f38ba8;
+  color: var(--error);
 }
 </style>

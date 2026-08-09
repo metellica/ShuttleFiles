@@ -194,10 +194,10 @@ function run(item: MenuItem, index: number, event: MouseEvent) {
   position: fixed;
   z-index: 300;
   min-width: 200px;
-  background: #24243a;
-  border: 1px solid #45475a;
+  background: var(--bg-panel);
+  border: 1px solid var(--text-disabled);
   border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 16px var(--shadow-sm);
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -210,7 +210,7 @@ function run(item: MenuItem, index: number, event: MouseEvent) {
   gap: 8px;
   background: none;
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   text-align: left;
   padding: 6px 10px;
   font-size: 12px;
@@ -220,24 +220,24 @@ function run(item: MenuItem, index: number, event: MouseEvent) {
 }
 
 .ctx-item:hover:not(.disabled) {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .ctx-item.open {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .ctx-item.disabled {
-  color: #6c7086;
+  color: var(--text-muted);
   cursor: default;
 }
 
 .ctx-item.danger {
-  color: #f38ba8;
+  color: var(--error);
 }
 
 .ctx-item.checked {
-  color: #89b4fa;
+  color: var(--accent);
 }
 
 .ctx-icon {
@@ -251,7 +251,7 @@ function run(item: MenuItem, index: number, event: MouseEvent) {
 }
 
 .ctx-arrow {
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 14px;
   line-height: 1;
   flex-shrink: 0;
@@ -259,12 +259,12 @@ function run(item: MenuItem, index: number, event: MouseEvent) {
 }
 
 .ctx-item.open .ctx-arrow {
-  color: #cdd6f4;
+  color: var(--text-primary);
 }
 
 .ctx-sep {
   height: 1px;
-  background: #45475a;
+  background: var(--text-disabled);
   margin: 4px 6px;
 }
 </style>

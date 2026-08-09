@@ -199,8 +199,8 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 <style scoped>
 .tab-bar {
   display: flex;
-  background: #181825;
-  border-bottom: 1px solid #313244;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
   height: 36px;
   align-items: stretch;
   overflow-x: auto;
@@ -211,8 +211,8 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 
 /* The side without the focus recedes rather than disappears. */
 .tab-bar.unfocused .tab.active {
-  box-shadow: inset 0 2px 0 #45475a;
-  color: #a6adc8;
+  box-shadow: inset 0 2px 0 var(--text-disabled);
+  color: var(--text-secondary);
 }
 
 .tab-bar::-webkit-scrollbar {
@@ -225,46 +225,46 @@ function onMouseDown(tabId: string, event: MouseEvent) {
   gap: 6px;
   padding: 0 10px;
   cursor: pointer;
-  border-right: 1px solid #313244;
+  border-right: 1px solid var(--border);
   font-size: 12px;
-  color: #a6adc8;
+  color: var(--text-secondary);
   min-width: 130px;
   max-width: 220px;
 }
 
 .tab.active {
-  background: #1e1e2e;
-  color: #cdd6f4;
-  box-shadow: inset 0 2px 0 #89b4fa;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .tab:hover {
-  background: #242438;
+  background: var(--bg-hover);
 }
 
 .tab.drop-target {
-  outline: 1px dashed #89b4fa;
+  outline: 1px dashed var(--accent);
   outline-offset: -2px;
 }
 
 .tab.file-drag-target {
-  box-shadow: inset 0 -2px 0 #89b4fa;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .tab.locked {
-  box-shadow: inset 2px 0 0 #f9e2af;
+  box-shadow: inset 2px 0 0 var(--warning);
 }
 
 .tab.locked.active {
-  box-shadow: inset 2px 0 0 #f9e2af, inset 0 2px 0 #89b4fa;
+  box-shadow: inset 2px 0 0 var(--warning), inset 0 2px 0 var(--accent);
 }
 
 .tab.soft-locked {
-  box-shadow: inset 2px 0 0 #94e2d5;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .tab.soft-locked.active {
-  box-shadow: inset 2px 0 0 #94e2d5, inset 0 2px 0 #89b4fa;
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent);
 }
 
 .tab-lock {
@@ -276,13 +276,13 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 }
 
 .tab-lock-mark {
-  color: #f9e2af;
+  color: var(--warning);
   font-weight: 700;
   margin-left: 1px;
 }
 
 .tab.strayed .tab-lock-mark {
-  color: #fab387;
+  color: var(--warning);
 }
 
 .tab-icon {
@@ -300,7 +300,7 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 .tab-close {
   background: none;
   border: none;
-  color: #6c7086;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
@@ -308,19 +308,19 @@ function onMouseDown(tabId: string, event: MouseEvent) {
 }
 
 .tab-close:hover {
-  color: #f38ba8;
+  color: var(--error);
 }
 
 .tab-add {
   background: none;
   border: none;
-  color: #a6adc8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 18px;
   padding: 0 12px;
 }
 
 .tab-add:hover {
-  color: #cdd6f4;
+  color: var(--text-primary);
 }
 </style>

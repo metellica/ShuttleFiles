@@ -120,7 +120,7 @@ async function create() {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -128,24 +128,24 @@ async function create() {
 }
 
 .dialog {
-  background: #24243a;
-  border: 1px solid #45475a;
+  background: var(--bg-panel);
+  border: 1px solid var(--text-disabled);
   border-radius: 8px;
   padding: 16px;
   width: 460px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 32px var(--shadow-md);
 }
 
 h3 {
   font-size: 13px;
   font-weight: 500;
-  color: #cdd6f4;
+  color: var(--text-primary);
   margin-bottom: 10px;
 }
 
 .summary {
   font-size: 11px;
-  color: #6c7086;
+  color: var(--text-muted);
   margin-bottom: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,17 +155,17 @@ h3 {
 label {
   display: block;
   font-size: 12px;
-  color: #a6adc8;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 
 input,
 select {
   width: 100%;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 8px;
@@ -174,7 +174,7 @@ select {
 
 input:focus,
 select:focus {
-  border-color: #89b4fa;
+  border-color: var(--accent);
 }
 
 .row {
@@ -189,13 +189,13 @@ select:focus {
 
 .hint {
   font-size: 11px;
-  color: #6c7086;
+  color: var(--text-muted);
   margin-top: 10px;
 }
 
 .error {
   font-size: 12px;
-  color: #f38ba8;
+  color: var(--error);
   margin-top: 10px;
 }
 
@@ -207,9 +207,9 @@ select:focus {
 }
 
 .btn {
-  background: #313244;
+  background: var(--border);
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 14px;
@@ -218,20 +218,20 @@ select:focus {
 }
 
 .btn:hover:not(:disabled) {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .btn:disabled {
-  color: #45475a;
+  color: var(--text-disabled);
   cursor: default;
 }
 
 .btn.primary {
-  background: #89b4fa;
-  color: #1e1e2e;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #6b8ae0;
+  background: var(--accent-hover);
 }
 </style>

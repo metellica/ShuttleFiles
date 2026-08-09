@@ -128,15 +128,15 @@ defineExpose({ startEdit })
   flex: 1;
   min-width: 0;
   height: 26px;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 0 4px;
   font-size: 12px;
 }
 
 .path-bar.invalid {
-  border-color: #f38ba8;
+  border-color: var(--error);
 }
 
 .crumbs {
@@ -157,7 +157,7 @@ defineExpose({ startEdit })
 .crumb {
   background: none;
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 2px 5px;
@@ -167,12 +167,12 @@ defineExpose({ startEdit })
 }
 
 .crumb:hover {
-  background: #313244;
-  color: #89b4fa;
+  background: var(--border);
+  color: var(--accent);
 }
 
 .sep {
-  color: #6c7086;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -182,7 +182,7 @@ defineExpose({ startEdit })
   background: transparent;
   border: none;
   outline: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 0 4px;
@@ -196,7 +196,7 @@ defineExpose({ startEdit })
 .icon-btn {
   background: none;
   border: none;
-  color: #a6adc8;
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 11px;
   padding: 2px 4px;
@@ -204,6 +204,6 @@ defineExpose({ startEdit })
 }
 
 .icon-btn:hover {
-  background: #313244;
+  background: var(--border);
 }
 </style>

@@ -46,7 +46,7 @@ function confirm() {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -54,27 +54,27 @@ function confirm() {
 }
 
 .dialog {
-  background: #24243a;
-  border: 1px solid #45475a;
+  background: var(--bg-panel);
+  border: 1px solid var(--text-disabled);
   border-radius: 8px;
   padding: 16px;
   width: 340px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 32px var(--shadow-md);
 }
 
 h3 {
   font-size: 13px;
   font-weight: 500;
-  color: #cdd6f4;
+  color: var(--text-primary);
   margin-bottom: 10px;
 }
 
 input {
   width: 100%;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 8px;
@@ -82,7 +82,7 @@ input {
 }
 
 input:focus {
-  border-color: #89b4fa;
+  border-color: var(--accent);
 }
 
 .buttons {
@@ -93,9 +93,9 @@ input:focus {
 }
 
 .btn {
-  background: #313244;
+  background: var(--border);
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 14px;
@@ -104,15 +104,15 @@ input:focus {
 }
 
 .btn:hover {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .btn.primary {
-  background: #89b4fa;
-  color: #1e1e2e;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .btn.primary:hover {
-  background: #6b8ae0;
+  background: var(--accent-hover);
 }
 </style>

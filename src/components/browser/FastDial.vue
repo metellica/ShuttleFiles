@@ -140,7 +140,7 @@ h2 {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #a6adc8;
+  color: var(--text-secondary);
   margin-bottom: 10px;
   display: flex;
   align-items: baseline;
@@ -152,13 +152,13 @@ h2 small {
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
-  color: #6c7086;
+  color: var(--text-muted);
 }
 
 .link {
   background: none;
   border: none;
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 10px;
   font-family: inherit;
   cursor: pointer;
@@ -166,7 +166,7 @@ h2 small {
 }
 
 .link:hover {
-  color: #89b4fa;
+  color: var(--accent);
 }
 
 .grid {
@@ -181,20 +181,20 @@ h2 small {
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
   cursor: pointer;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-family: inherit;
   text-align: left;
   transition: border-color 0.12s, background 0.12s;
 }
 
 .tile:hover {
-  background: #242438;
-  border-color: #89b4fa;
+  background: var(--bg-hover);
+  border-color: var(--accent);
 }
 
 .tile.dragging {
@@ -216,13 +216,13 @@ h2 small {
 
 .tile-sub {
   font-size: 10px;
-  color: #6c7086;
+  color: var(--text-muted);
 }
 
 .bar {
   width: 100%;
   height: 4px;
-  background: #313244;
+  background: var(--border);
   border-radius: 2px;
   overflow: hidden;
   margin-top: 4px;
@@ -231,11 +231,11 @@ h2 small {
 .bar-fill {
   display: block;
   height: 100%;
-  background: #89b4fa;
+  background: var(--accent);
 }
 
 .bar-fill.full {
-  background: #f38ba8;
+  background: var(--error);
 }
 
 .remove {
@@ -244,7 +244,7 @@ h2 small {
   right: 4px;
   background: none;
   border: none;
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 14px;
   line-height: 1;
   cursor: pointer;
@@ -257,6 +257,6 @@ h2 small {
 }
 
 .remove:hover {
-  color: #f38ba8;
+  color: var(--error);
 }
 </style>

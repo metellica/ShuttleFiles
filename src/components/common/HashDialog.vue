@@ -210,7 +210,7 @@ onUnmounted(() => {
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -218,13 +218,13 @@ onUnmounted(() => {
 }
 
 .dialog {
-  background: #24243a;
-  border: 1px solid #45475a;
+  background: var(--bg-panel);
+  border: 1px solid var(--text-disabled);
   border-radius: 8px;
   padding: 14px;
   width: 640px;
   max-width: 92vw;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 32px var(--shadow-md);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -239,12 +239,12 @@ header {
 h3 {
   font-size: 13px;
   font-weight: 500;
-  color: #cdd6f4;
+  color: var(--text-primary);
 }
 
 .count {
   font-size: 11px;
-  color: #6c7086;
+  color: var(--text-muted);
 }
 
 .spacer {
@@ -256,7 +256,7 @@ h3 {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #a6adc8;
+  color: var(--text-secondary);
   cursor: pointer;
   user-select: none;
 }
@@ -270,20 +270,20 @@ h3 {
 .bar {
   flex: 1;
   height: 4px;
-  background: #181825;
+  background: var(--bg-secondary);
   border-radius: 2px;
   overflow: hidden;
 }
 
 .fill {
   height: 100%;
-  background: #89b4fa;
+  background: var(--accent);
   transition: width 0.1s linear;
 }
 
 .progress-text {
   font-size: 10px;
-  color: #6c7086;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -296,22 +296,22 @@ h3 {
 }
 
 .empty {
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 12px;
   text-align: center;
   padding: 16px;
 }
 
 .item {
-  background: #1e1e2e;
-  border: 1px solid #313244;
+  background: var(--accent-text);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
 }
 
 .name {
   font-size: 12px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -319,7 +319,7 @@ h3 {
 
 .meta {
   font-size: 10px;
-  color: #6c7086;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
@@ -333,17 +333,17 @@ h3 {
 }
 
 .digest.match {
-  background: #2a3f31;
+  background: var(--hash-highlight);
 }
 
 .digest.error {
-  color: #f38ba8;
+  color: var(--error);
   font-size: 11px;
 }
 
 .tag {
   font-size: 9px;
-  color: #6c7086;
+  color: var(--text-muted);
   width: 52px;
   flex-shrink: 0;
 }
@@ -351,7 +351,7 @@ h3 {
 code {
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 11px;
-  color: #a6e3a1;
+  color: var(--success);
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
@@ -359,14 +359,14 @@ code {
 }
 
 .digest.match code {
-  color: #a6e3a1;
+  color: var(--success);
   font-weight: 600;
 }
 
 .copy {
   background: none;
   border: none;
-  color: #6c7086;
+  color: var(--text-muted);
   cursor: pointer;
   font-size: 12px;
   padding: 0 2px;
@@ -374,7 +374,7 @@ code {
 }
 
 .copy:hover {
-  color: #89b4fa;
+  color: var(--accent);
 }
 
 .compare {
@@ -385,10 +385,10 @@ code {
 
 .expected {
   flex: 1;
-  background: #181825;
-  border: 1px solid #313244;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 11px;
   padding: 5px 8px;
@@ -396,17 +396,17 @@ code {
 }
 
 .expected:focus {
-  border-color: #89b4fa;
+  border-color: var(--accent);
 }
 
 .verdict {
   font-size: 11px;
-  color: #f38ba8;
+  color: var(--error);
   white-space: nowrap;
 }
 
 .verdict.ok {
-  color: #a6e3a1;
+  color: var(--success);
 }
 
 footer {
@@ -416,9 +416,9 @@ footer {
 }
 
 .btn {
-  background: #313244;
+  background: var(--border);
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   padding: 6px 14px;
@@ -427,20 +427,20 @@ footer {
 }
 
 .btn:hover:not(:disabled) {
-  background: #45475a;
+  background: var(--text-disabled);
 }
 
 .btn:disabled {
-  color: #6c7086;
+  color: var(--text-muted);
   cursor: default;
 }
 
 .btn.primary {
-  background: #89b4fa;
-  color: #1e1e2e;
+  background: var(--accent);
+  color: var(--accent-text);
 }
 
 .btn.primary:hover {
-  background: #6b8ae0;
+  background: var(--accent-hover);
 }
 </style>
