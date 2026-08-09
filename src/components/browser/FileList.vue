@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { FileEntry, SearchHit } from '@/types/filesystem'
 import { ROOT } from '@/types/filesystem'
 import { fileIcon, formatSize, formatTime } from '@/composables/useFormat'
@@ -10,6 +10,12 @@ const props = defineProps<{
   currentPath?: string
   /** Folder ".." leads to; absent (or during a search) hides that row. */
   parentPath?: string | null
+  /**
+   * Path to auto-select after loading, when the entry exists in the listing.
+   * Set when navigating UP so the child folder you left is highlighted,
+   * letting you re-enter it with a single double-click.
+   */
+  focusPath?: string | null
   loading: boolean
   error: string
   /** Entries are ranked search hits, so relevance is the natural order. */
@@ -80,13 +86,33 @@ onBeforeUnmount(() => {
   rootRef.value?.removeEventListener('wheel', onWheel)
 })
 
-// A new listing invalidates the old selection.
+// A new listing resets selection, then auto-selects a row when appropriate:
+// - `focusPath` (set when navigating UP) → the child folder you came from
+// - `parentPath` ("..") → so you can go back with a double-click
 watch(
   () => props.entries,
   () => {
     selected.value = new Set()
     anchorIndex.value = null
-    emit('selection-change', [])
+    if (props.searchMode || !props.entries.length) {
+      commitSelection()
+      return
+    }
+    const valid = new Set(props.entries.map((e) => e.path))
+    if (props.focusPath && valid.has(props.focusPath)) {
+      selected.value = new Set([props.focusPath])
+      anchorIndex.value = props.entries.findIndex((e) => e.path === props.focusPath)
+    } else if (props.parentPath && props.parentPath !== '') {
+      selected.value = new Set([props.parentPath])
+      anchorIndex.value = 0
+    }
+    commitSelection()
+    // Auto-selected row may be off-screen in a long listing; bring it to
+    // the middle of the pane so the context around it is visible too.
+    nextTick(() => {
+      const row = rootRef.value?.querySelector('.row.selected') as HTMLElement | null
+      row?.scrollIntoView({ block: 'center' })
+    })
   }
 )
 
@@ -122,7 +148,11 @@ function setSort(key: SortKey) {
 }
 
 function commitSelection() {
-  emit('selection-change', [...selected.value])
+  // Only emit paths of real entries — ".." and stale focusPath are kept
+  // for visual highlight only and must never reach copy/cut/delete/rename.
+  const valid = new Set(sorted.value.map((e) => e.path))
+  const paths = [...selected.value].filter((p) => valid.has(p))
+  emit('selection-change', paths)
 }
 
 function onRowClick(entry: FileEntry, index: number, event: MouseEvent) {
@@ -268,7 +298,10 @@ function onRowDragStart(entry: FileEntry, index: number, event: DragEvent) {
     anchorIndex.value = index
     commitSelection()
   }
-  const sources = selected.value.has(entry.path) ? [...selected.value] : [entry.path]
+  let sources = selected.value.has(entry.path) ? [...selected.value] : [entry.path]
+  // Only real entries may be dragged — ".." and stale focusPath are excluded.
+  const valid = new Set(sorted.value.map((e) => e.path))
+  sources = sources.filter((p) => valid.has(p))
   if (!event.dataTransfer || sources.length === 0) return
   event.dataTransfer.effectAllowed = 'move'
   event.dataTransfer.setData(DND_MIME, JSON.stringify(sources))
@@ -510,7 +543,7 @@ defineExpose({
             v-if="parentEntry"
             class="row parent-row"
             :data-path="parentEntry.path"
-            :class="{ 'drop-dir': dropTargetDir === parentEntry.path }"
+            :class="{ 'drop-dir': dropTargetDir === parentEntry.path, selected: selected.has(parentEntry.path) }"
             @dblclick="emit('open', parentEntry)"
             @dragenter="onRowDragEnter(parentEntry, $event)"
             @dragover="onRowDragOver(parentEntry, $event)"

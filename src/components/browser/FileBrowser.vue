@@ -41,8 +41,18 @@ const terminals = ref<Awaited<ReturnType<typeof api.listTerminals>>>([])
 // Fetch once on mount; the backend caches internally.
 api.listTerminals().then((t) => (terminals.value = t)).catch(() => {})
 const selection = ref<string[]>([])
+const prevPath = ref<string | null>(null)
 const loading = ref(false)
 const error = ref('')
+
+/**
+ * Path to auto-select after loading.
+ *
+ * When navigating UP (Backspace / Alt+ArrowUp) from a child folder, set to
+ * the child's path so the user can re-enter it with a single double-click.
+ * Going DOWN into a child clears it, letting FileList fall back to "..".
+ */
+const focusPath = ref<string | null>(null)
 const listRef = ref<InstanceType<typeof FileList> | null>(null)
 const ctx = ref({ visible: false, x: 0, y: 0, items: [] as MenuItem[] })
 const hashPaths = ref<string[]>([])
@@ -99,6 +109,19 @@ async function load() {
     if (id === requestId) loading.value = false
   }
 }
+
+/**
+ * Detect "go up" navigation: when the new path is the parent of the
+ * previous one, auto-select the child folder we just left behind.
+ */
+watch(() => props.path, (_newPath, oldPath) => {
+  if (oldPath && isDirectChildOf(_newPath, oldPath)) {
+    focusPath.value = oldPath
+  } else {
+    focusPath.value = null
+  }
+  prevPath.value = _newPath
+})
 
 watch(() => props.path, load, { immediate: true })
 
@@ -404,6 +427,14 @@ async function openInNewTab(entry: FileEntry) {
 function joinPath(dir: string, name: string): string {
   const sep = dir.includes('\\') ? '\\' : '/'
   return dir.endsWith(sep) ? `${dir}${name}` : `${dir}${sep}${name}`
+}
+
+/** True when `parent` is the immediate parent directory of `child`. */
+function isDirectChildOf(parent: string, child: string): boolean {
+  const np = parent.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+  const nc = child.replace(/[\\/]+$/, '').replace(/\//g, '\\')
+  const sep = nc.lastIndexOf('\\')
+  return sep > 0 && nc.substring(0, sep) === np
 }
 
 /**
@@ -731,6 +762,7 @@ defineExpose({
       :entries="visibleEntries"
       :current-path="props.path"
       :parent-path="parentPath"
+      :focus-path="focusPath"
       :loading="loading"
       :error="error || search.error.value"
       :search-mode="searchMode"
