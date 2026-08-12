@@ -326,6 +326,45 @@ where
 
 // --- Single-file copy -------------------------------------------------------
 
+/// Encode `path` as a NUL-terminated wide string in extended-length
+/// (`\\?\`) form.
+///
+/// `CopyFile2`, `CreateFileW` and `FindFirstFileW` all enforce the
+/// classic 260-character `MAX_PATH` limit unless the path is already
+/// verbatim, which `std::fs` applies for us but these raw Win32 calls do
+/// not. Long UNC sources — common with deeply nested network shares —
+/// were otherwise rejected with "the system cannot find the path
+/// specified" even though Explorer, which prefixes paths itself, copies
+/// them fine.
+#[cfg(windows)]
+fn wide_path(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+
+    let wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+    const VERBATIM: [u16; 4] = [b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16];
+
+    let mut out = if wide.starts_with(&VERBATIM) {
+        wide
+    } else if wide.starts_with(&VERBATIM[..2]) {
+        // UNC: \\server\share\... -> \\?\UNC\server\share\...
+        let mut buf = VERBATIM.to_vec();
+        buf.extend("UNC".encode_utf16());
+        buf.push(b'\\' as u16);
+        buf.extend_from_slice(&wide[2..]);
+        buf
+    } else if path.is_absolute() {
+        // Drive-absolute: C:\... -> \\?\C:\...
+        let mut buf = VERBATIM.to_vec();
+        buf.extend_from_slice(&wide);
+        buf
+    } else {
+        // Relative paths cannot be made verbatim as-is; leave them be.
+        wide
+    };
+    out.push(0);
+    out
+}
+
 #[cfg(windows)]
 mod native_copy {
     use std::ffi::c_void;
@@ -373,11 +412,7 @@ mod native_copy {
     }
 
     fn wide(path: &Path) -> Vec<u16> {
-        use std::os::windows::ffi::OsStrExt;
-        path.as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
+        super::wide_path(path)
     }
 
     pub fn copy_file(
@@ -518,11 +553,7 @@ mod dir_link {
     }
 
     fn wide(path: &Path) -> Vec<u16> {
-        use std::os::windows::ffi::OsStrExt;
-        path.as_os_str()
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
+        super::wide_path(path)
     }
 
     /// Recreate `src`'s link at `dst`. A directory symlink is preferred
@@ -1091,6 +1122,47 @@ pub fn spawn<R: Runtime>(
     }
 
     id
+}
+
+#[cfg(all(test, windows))]
+mod wide_path_tests {
+    use super::wide_path;
+    use std::path::Path;
+
+    /// Decodes a NUL-terminated `u16` buffer back to a `String` for
+    /// readable assertions.
+    fn to_string(buf: &[u16]) -> String {
+        String::from_utf16(&buf[..buf.len() - 1]).unwrap()
+    }
+
+    #[test]
+    fn unc_paths_get_the_unc_verbatim_prefix() {
+        let long_name = "a".repeat(200);
+        let path = format!(r"\\10.66.12.26\cis\{long_name}\file.zip");
+        let got = to_string(&wide_path(Path::new(&path)));
+        assert_eq!(
+            got,
+            format!(r"\\?\UNC\10.66.12.26\cis\{long_name}\file.zip")
+        );
+    }
+
+    #[test]
+    fn drive_absolute_paths_get_the_plain_verbatim_prefix() {
+        let got = to_string(&wide_path(Path::new(r"C:\Users\me\file.zip")));
+        assert_eq!(got, r"\\?\C:\Users\me\file.zip");
+    }
+
+    #[test]
+    fn already_verbatim_paths_are_left_alone() {
+        let got = to_string(&wide_path(Path::new(r"\\?\C:\Users\me\file.zip")));
+        assert_eq!(got, r"\\?\C:\Users\me\file.zip");
+    }
+
+    #[test]
+    fn relative_paths_are_left_alone() {
+        let got = to_string(&wide_path(Path::new(r"sub\file.zip")));
+        assert_eq!(got, r"sub\file.zip");
+    }
 }
 
 #[cfg(test)]
