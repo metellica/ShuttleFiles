@@ -841,6 +841,20 @@ fn unique_destination(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{}-{}", name, uuid::Uuid::new_v4()))
 }
 
+/// Clear an existing destination before an Overwrite copy/move, so a
+/// stale file doesn't linger under (or a directory doesn't merge into)
+/// what's about to replace it.
+fn remove_existing(path: &Path) -> AppResult<()> {
+    let meta = std::fs::symlink_metadata(path)
+        .map_err(|e| AppError::Io(format!("Cannot stat {}: {}", path.display(), e)))?;
+    let result = if meta.is_dir() && !meta.file_type().is_symlink() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+    result.map_err(|e| AppError::Io(format!("Cannot remove {}: {}", path.display(), e)))
+}
+
 /// Reject pasting a folder into itself or one of its descendants, which
 /// would otherwise recurse until the disk fills up.
 fn assert_not_nested(src: &Path, dst_dir: &Path) -> AppResult<()> {
@@ -888,6 +902,7 @@ fn run_transfer(
     plans: &[SourcePlan],
     dest_dir: &Path,
     cut: bool,
+    overwrite: bool,
     progress: &dyn Progress,
 ) -> AppResult<()> {
     if !dest_dir.is_dir() {
@@ -909,7 +924,19 @@ fn run_transfer(
             .file_name()
             .and_then(|s| s.to_str())
             .ok_or_else(|| AppError::InvalidPath(format!("Bad source name: {}", src.display())))?;
-        let dst = unique_destination(dest_dir, name);
+        let dst = if overwrite {
+            let candidate = dest_dir.join(name);
+            // The user chose Overwrite: clear whatever is there first so
+            // a directory replacing a file (or vice versa) doesn't leave
+            // stale bits behind, and so the same-volume rename below
+            // doesn't fail because the target already exists.
+            if candidate.exists() {
+                remove_existing(&candidate)?;
+            }
+            candidate
+        } else {
+            unique_destination(dest_dir, name)
+        };
 
         if cut {
             // Same-volume moves are a metadata operation, so the whole
@@ -954,6 +981,7 @@ fn execute(
     kind: JobKind,
     plans: &[SourcePlan],
     dest_dir: &str,
+    overwrite: bool,
     progress: &dyn Progress,
 ) -> AppResult<()> {
     match kind {
@@ -963,8 +991,8 @@ fn execute(
             }
             Ok(())
         }
-        JobKind::Copy => run_transfer(plans, Path::new(dest_dir), false, progress),
-        JobKind::Move => run_transfer(plans, Path::new(dest_dir), true, progress),
+        JobKind::Copy => run_transfer(plans, Path::new(dest_dir), false, overwrite, progress),
+        JobKind::Move => run_transfer(plans, Path::new(dest_dir), true, overwrite, progress),
         // Handled before the file-tree scan, which cannot walk into an
         // archive and would only measure the wrong thing.
         JobKind::Extract | JobKind::Compress => unreachable!(),
@@ -1083,7 +1111,7 @@ pub fn spawn<R: Runtime>(
             let total_files: u64 = plans.iter().map(|p| p.files).sum();
             let total_bytes: u64 = plans.iter().map(|p| p.bytes).sum();
             start_running(&reporter, total_files, total_bytes);
-            execute(kind, &plans, &dest_dir, &reporter)
+            execute(kind, &plans, &dest_dir, options.overwrite, &reporter)
         })();
 
         reporter.sync_counters();

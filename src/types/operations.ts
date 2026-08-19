@@ -3,9 +3,15 @@ export type JobKind = 'copy' | 'move' | 'delete' | 'extract' | 'compress'
 /** Extra input for the archive jobs. */
 export interface JobOptions {
   /** Compress: full path of the archive to create; its extension picks the format. */
-  archivePath: string
+  archivePath?: string
   /** Compress: 0 stores, 9 compresses hardest. */
   level?: number
+  /**
+   * Copy/Move: replace an existing destination instead of auto-renaming
+   * (`report.txt` -> `report (2).txt`). Set once the user has confirmed
+   * Overwrite in the conflict dialog.
+   */
+  overwrite?: boolean
 }
 
 export type JobStatus = 'scanning' | 'running' | 'completed' | 'failed' | 'cancelled'

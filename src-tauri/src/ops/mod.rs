@@ -47,6 +47,12 @@ pub struct JobOptions {
     /// Compress: 0 stores, 9 compresses hardest.
     #[serde(default)]
     pub level: Option<i32>,
+    /// Copy/Move: replace an existing destination instead of
+    /// auto-renaming (`report.txt` -> `report (2).txt`). The frontend
+    /// resolves conflicts with the user before starting the job, so by
+    /// the time this is set it means "the user chose Overwrite".
+    #[serde(default)]
+    pub overwrite: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

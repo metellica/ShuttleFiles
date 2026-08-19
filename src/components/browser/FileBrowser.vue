@@ -13,6 +13,12 @@ import { useOperationsStore } from '@/stores/operations'
 import { usePlacesStore } from '@/stores/places'
 import { useOpenWithStore } from '@/stores/openWith'
 import { archiveRoot, isInsideArchive, splitArchive, useArchivesStore } from '@/stores/archives'
+import {
+  confirmOverwrite,
+  toMeta,
+  type OverwriteConflict,
+  type OverwriteMeta,
+} from '@/composables/useConfirmOverwrite'
 import ContextMenu, { type MenuItem } from '@/components/common/ContextMenu.vue'
 import HashDialog from '@/components/common/HashDialog.vue'
 import ArchiveDialog from '@/components/common/ArchiveDialog.vue'
@@ -250,6 +256,77 @@ function selectedEntries(): FileEntry[] {
   return entries.value.filter((e) => selection.value.includes(e.path))
 }
 
+/** Base name of a path, tolerating both '/' and Windows '\' separators. */
+function baseName(p: string): string {
+  return p.split(/[/\\]/).filter(Boolean).pop() ?? p
+}
+
+/** Entries already at `destDir` whose name matches one of `incomingNames`
+ *  — i.e. what a paste/move there would clobber. Best-effort: an
+ *  unreadable destination is treated as "no conflicts". */
+async function findConflicts(destDir: string, incomingNames: string[]): Promise<FileEntry[]> {
+  const names = new Set(incomingNames)
+  try {
+    const listing = await api.listDir(destDir)
+    return listing.entries.filter((e) => names.has(e.name))
+  } catch {
+    return []
+  }
+}
+
+/** Best-effort meta for each of `paths`, grouped by parent directory to
+ *  minimize `listDir` calls. Misses are simply absent from the result. */
+async function statSourcePaths(paths: string[]): Promise<Map<string, OverwriteMeta>> {
+  const byDir = new Map<string, string[]>()
+  for (const p of paths) {
+    const dir = (await api.parentPath(p)) ?? ''
+    const list = byDir.get(dir) ?? []
+    list.push(baseName(p))
+    byDir.set(dir, list)
+  }
+  const result = new Map<string, OverwriteMeta>()
+  await Promise.all(
+    Array.from(byDir.entries()).map(async ([dir, names]) => {
+      try {
+        const listing = await api.listDir(dir)
+        const nameSet = new Set(names)
+        for (const e of listing.entries) {
+          if (nameSet.has(e.name)) result.set(e.name, toMeta(e))
+        }
+      } catch {
+        // best-effort: leave these names unresolved
+      }
+    })
+  )
+  return result
+}
+
+/** Prompts to overwrite when any incoming name already exists at
+ *  `destDir`. Returns the subset of `paths` to actually proceed with
+ *  (all of them on overwrite/no-conflict, the non-conflicting ones on
+ *  skip, or none — signalling cancel — on cancel), plus whether the
+ *  caller should pass `overwrite: true` down to the job so the backend
+ *  replaces rather than auto-renames. */
+async function resolveOverwrite(
+  destDir: string,
+  paths: string[]
+): Promise<{ paths: string[]; overwrite: boolean } | null> {
+  const destEntries = await findConflicts(destDir, paths.map(baseName))
+  if (destEntries.length === 0) return { paths, overwrite: false }
+  const conflictNames = new Set(destEntries.map((e) => e.name))
+  const sourcePaths = paths.filter((p) => conflictNames.has(baseName(p)))
+  const sourceMeta = await statSourcePaths(sourcePaths)
+  const conflicts: OverwriteConflict[] = destEntries.map((e) => ({
+    name: e.name,
+    dest: toMeta(e),
+    source: sourceMeta.get(e.name) ?? null,
+  }))
+  const choice = await confirmOverwrite(conflicts)
+  if (choice === 'cancel') return null
+  if (choice === 'overwrite') return { paths, overwrite: true }
+  return { paths: paths.filter((p) => !conflictNames.has(baseName(p))), overwrite: false }
+}
+
 async function copyPathsToOsClipboard() {
   await navigator.clipboard.writeText(selection.value.join('\r\n'))
 }
@@ -270,7 +347,11 @@ async function doPaste() {
   try {
     const { paths, cut } = await clipboard.read()
     if (paths.length === 0) return
-    await ops.start(cut ? 'move' : 'copy', paths, props.path)
+    const resolved = await resolveOverwrite(props.path, paths)
+    if (!resolved || resolved.paths.length === 0) return
+    await ops.start(cut ? 'move' : 'copy', resolved.paths, props.path, {
+      overwrite: resolved.overwrite,
+    })
   } catch (e) {
     error.value = String(e)
   }
@@ -279,7 +360,9 @@ async function doPaste() {
 async function moveDroppedEntries(sources: string[], destDir: string) {
   if (insideArchive.value || !destDir || sources.length === 0) return
   try {
-    await ops.start('move', sources, destDir)
+    const resolved = await resolveOverwrite(destDir, sources)
+    if (!resolved || resolved.paths.length === 0) return
+    await ops.start('move', resolved.paths, destDir, { overwrite: resolved.overwrite })
   } catch (e) {
     error.value = String(e)
   }
