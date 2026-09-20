@@ -8,8 +8,8 @@ import { isInsideArchive, splitArchive } from '@/stores/archives'
  * Tab locking, modelled on Total Commander:
  * - `none`: an ordinary tab.
  * - `locked`: the folder is fixed. Navigating elsewhere opens a new tab.
- * - `locked-allow-dirs`: browsing is allowed, but returning to the tab
- *   restores its base folder.
+ * - `locked-allow-dirs`: browsing is allowed and the tab stays wherever
+ *   it is; double-clicking the tab returns it to its base folder.
  */
 export type TabLock = 'none' | 'locked' | 'locked-allow-dirs'
 
@@ -308,9 +308,14 @@ export const useTabsStore = defineStore('tabs', () => {
     if (!pane || !tab) return
     pane.activeTabId = id
     activePaneId.value = pane.id
-    // Coming back to a soft-locked tab snaps it to its base folder.
-    if (hasStrayed(tab)) pushHistory(tab, tab.lockedPath)
     persist()
+  }
+
+  /** Jump a strayed soft-locked tab back to its base folder — double-click on the tab. */
+  function backToLockedFolder(id: string) {
+    const tab = findTab(id)
+    if (!tab || !hasStrayed(tab)) return
+    pushHistory(tab, tab.lockedPath)
   }
 
   /** Reorder after a tab drag; a drag never leaves its own tab bar. */
@@ -454,6 +459,7 @@ export const useTabsStore = defineStore('tabs', () => {
     setActiveTab,
     setActivePane,
     setLock,
+    backToLockedFolder,
     setFilter,
     setRecursive,
     moveTab,

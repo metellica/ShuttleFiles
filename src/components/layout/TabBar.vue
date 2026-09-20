@@ -33,7 +33,9 @@ function lockTitle(tab: Tab): string {
   const path = tab.path || 'This PC'
   if (tab.lock === 'none') return path
   const base = tab.lockedPath || 'This PC'
-  const stray = hasStrayed(tab) ? ` — away from ${base}` : ''
+  const stray = hasStrayed(tab)
+    ? ` — away from ${base}\nDouble-click the tab to return to the locked folder`
+    : ''
   return `${path}\n${LOCK_LABELS[tab.lock]}: ${base}${stray}`
 }
 
@@ -163,6 +165,7 @@ function onMouseDown(tabId: string, event: MouseEvent) {
       draggable="true"
       :title="lockTitle(tab)"
       @click="tabsStore.setActiveTab(tab.id)"
+      @dblclick="tabsStore.backToLockedFolder(tab.id)"
       @mousedown="onMouseDown(tab.id, $event)"
       @contextmenu.prevent="openTabMenu(tab, $event)"
       @dragstart="onDragStart(index, $event)"
