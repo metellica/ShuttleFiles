@@ -71,6 +71,9 @@ export interface ColumnWidths {
   time: number
 }
 
+/** Which browser layout the pane shows. */
+export type ViewMode = 'list' | 'columns'
+
 /** Persisted shape of `~/.config/shuttle-files/view.json`. */
 export interface ViewSettings {
   rowScale: number
@@ -80,6 +83,7 @@ export interface ViewSettings {
   columnWidths: ColumnWidths
   /** While true the name column ignores its width and fills the pane. */
   stretchName: boolean
+  viewMode: ViewMode
 }
 
 /** Persisted shape of `~/.config/shuttle-files/open-with.json`. */

@@ -3,9 +3,16 @@ import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import PathBar from '@/components/browser/PathBar.vue'
 import DensityControl from '@/components/layout/DensityControl.vue'
 import { useThemeStore } from '@/stores/theme'
+import { useViewSettingsStore } from '@/stores/viewSettings'
 import type { TerminalEntry } from '@/types/terminal'
 
 const theme = useThemeStore()
+const view = useViewSettingsStore()
+
+/** One button for both layouts; it always offers the other one. */
+function toggleViewMode() {
+  view.viewMode = view.viewMode === 'columns' ? 'list' : 'columns'
+}
 
 const props = defineProps<{
   path: string
@@ -141,6 +148,14 @@ defineExpose({ focusPathBar: () => pathBarRef.value?.startEdit(), focusFilter })
       ＋
     </button>
     <DensityControl />
+    <button
+      class="nav-btn"
+      :disabled="!props.path"
+      :title="view.viewMode === 'columns' ? 'Details view (Explorer)' : 'Column view (Finder)'"
+      @click="toggleViewMode"
+    >
+      {{ view.viewMode === 'columns' ? '☰' : '⫼' }}
+    </button>
     <button
       class="nav-btn"
       :class="{ on: props.split }"

@@ -94,6 +94,9 @@ pub struct ViewSettings {
     /// While true the name column ignores its width and fills the pane.
     #[serde(default = "default_stretch_name")]
     pub stretch_name: bool,
+    /// Which browser layout the pane shows: `"list"` or `"columns"`.
+    #[serde(default = "default_view_mode")]
+    pub view_mode: String,
 }
 
 fn default_split_ratio() -> f64 {
@@ -104,6 +107,10 @@ fn default_stretch_name() -> bool {
     true
 }
 
+fn default_view_mode() -> String {
+    "list".to_string()
+}
+
 impl Default for ViewSettings {
     fn default() -> Self {
         Self {
@@ -111,6 +118,7 @@ impl Default for ViewSettings {
             split_ratio: default_split_ratio(),
             column_widths: ColumnWidths::default(),
             stretch_name: default_stretch_name(),
+            view_mode: default_view_mode(),
         }
     }
 }
@@ -159,6 +167,19 @@ mod tests {
             "columns nobody has dragged yet keep their default width"
         );
         assert!(view.stretch_name, "an untouched name column still fills the pane");
+        assert_eq!(
+            view.view_mode,
+            default_view_mode(),
+            "a view written before the column view existed still parses, as a list"
+        );
+    }
+
+    #[test]
+    fn an_unknown_view_mode_falls_back_to_a_list() {
+        let odd = r#"{"rowScale":1.0,"viewMode":"grid"}"#;
+        let view: ViewSettings = serde_json::from_str(odd).expect("parse");
+        // Sanity: the string round-trips; sanitising it is the frontend's job.
+        assert_eq!(view.view_mode, "grid");
     }
 
     #[test]

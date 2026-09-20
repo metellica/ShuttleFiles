@@ -12,6 +12,7 @@ import { useClipboardStore } from '@/stores/clipboard'
 import { useOperationsStore } from '@/stores/operations'
 import { usePlacesStore } from '@/stores/places'
 import { useOpenWithStore } from '@/stores/openWith'
+import { useViewSettingsStore } from '@/stores/viewSettings'
 import { archiveRoot, isInsideArchive, splitArchive, useArchivesStore } from '@/stores/archives'
 import {
   confirmOverwrite,
@@ -24,6 +25,7 @@ import HashDialog from '@/components/common/HashDialog.vue'
 import ArchiveDialog from '@/components/common/ArchiveDialog.vue'
 import FastDial from '@/components/browser/FastDial.vue'
 import FileList from '@/components/browser/FileList.vue'
+import ColumnView from '@/components/browser/ColumnView.vue'
 
 const props = defineProps<{ path: string; filter: string; recursive: boolean }>()
 const emit = defineEmits<{
@@ -39,6 +41,7 @@ const ops = useOperationsStore()
 const places = usePlacesStore()
 const openWith = useOpenWithStore()
 const archives = useArchivesStore()
+const view = useViewSettingsStore()
 const search = useFuzzySearch()
 
 const entries = ref<FileEntry[]>([])
@@ -50,6 +53,9 @@ const selection = ref<string[]>([])
 const prevPath = ref<string | null>(null)
 const loading = ref(false)
 const error = ref('')
+const columnRef = ref<InstanceType<typeof ColumnView> | null>(null)
+/** Every entry the column view has loaded, so rename/hash can act on a selection there. */
+const columnEntries = ref<FileEntry[]>([])
 
 /**
  * Path to auto-select after loading.
@@ -79,6 +85,15 @@ const searchMode = computed(
 )
 
 /**
+ * Which layout the pane shows. Search results are a flat, ranked list
+ * spanning many folders, so any active filter falls back to the details
+ * list — the columns come back once the filter is cleared.
+ */
+const showList = computed(
+  () => view.viewMode === 'list' || props.filter.trim().length > 0
+)
+
+/**
  * Filtering goes through the same Rust matcher the recursive finder
  * uses, so a query ranks identically whether or not it descends.
  */
@@ -91,7 +106,16 @@ const visibleEntries = computed<FileEntry[]>(() => {
   return entries.value
 })
 
+/** Entries the active view actually has loaded; the column view keeps its own listings. */
+const allEntries = computed(() => (!showList.value ? columnEntries.value : visibleEntries.value))
+
 async function load() {
+  // The column view loads its own listings; a refresh there re-lists every
+  // visible column (F5, a finished job, a shell-menu verb, a rename…).
+  if (!showList.value) {
+    await columnRef.value?.refresh()
+    return
+  }
   if (props.path === ROOT) {
     entries.value = []
     parentPath.value = null
@@ -129,7 +153,28 @@ watch(() => props.path, (_newPath, oldPath) => {
   prevPath.value = _newPath
 })
 
-watch(() => props.path, load, { immediate: true })
+watch(
+  () => props.path,
+  () => {
+    // The column view reacts to the path itself (trim/append or rebuild);
+    // its component self-initialises on mount, so a missing ref here just
+    // means it has not been created for this path yet.
+    if (showList.value) load()
+    else columnRef.value?.setPath(props.path)
+  },
+  { immediate: true }
+)
+
+/**
+ * Flipping layouts discards the other view's selection — paths picked in a
+ * listing that is no longer on screen are stale for copy/delete — and a
+ * return to the details list reloads the folder it was last showing.
+ */
+watch(showList, (asList) => {
+  selection.value = []
+  columnEntries.value = []
+  if (asList) load()
+})
 
 // A finished copy/move/delete may have changed this folder; reload
 // without the browser needing to know which job touched what.
@@ -144,13 +189,17 @@ watch(
 
 watch(
   [visibleEntries, selection, search.searching, search.truncated],
-  ([list, sel, searching, truncated]) =>
+  ([list, sel, searching, truncated]) => {
+    // The column view reports its own stats; counting the stale flat
+    // listing here would flash the status bar to zero.
+    if (!showList.value) return
     emit('stats', {
       total: searchMode.value ? search.total.value : list.length,
       selected: sel.length,
       searching,
       truncated,
-    }),
+    })
+  },
   { immediate: true }
 )
 
@@ -253,7 +302,7 @@ function reportOpenFailure(attempt: Promise<void>, name: string) {
 }
 
 function selectedEntries(): FileEntry[] {
-  return entries.value.filter((e) => selection.value.includes(e.path))
+  return allEntries.value.filter((e) => selection.value.includes(e.path))
 }
 
 /** Base name of a path, tolerating both '/' and Windows '\' separators. */
@@ -341,15 +390,17 @@ async function doCut() {
   await clipboard.cut(selection.value)
 }
 
-/** Reads the system clipboard, so files copied in Explorer paste here too. */
-async function doPaste() {
-  if (!props.path || insideArchive.value) return
+/** Reads the system clipboard, so files copied in Explorer paste here too.
+ *  The target defaults to the browsed folder; a column-view blank-area menu
+ *  passes the folder whose blank space was right-clicked. */
+async function doPaste(target = props.path) {
+  if (!target || insideArchive.value) return
   try {
     const { paths, cut } = await clipboard.read()
     if (paths.length === 0) return
-    const resolved = await resolveOverwrite(props.path, paths)
+    const resolved = await resolveOverwrite(target, paths)
     if (!resolved || resolved.paths.length === 0) return
-    await ops.start(cut ? 'move' : 'copy', resolved.paths, props.path, {
+    await ops.start(cut ? 'move' : 'copy', resolved.paths, target, {
       overwrite: resolved.overwrite,
     })
   } catch (e) {
@@ -392,19 +443,22 @@ async function doRename() {
   const parent = await api.parentPath(entry.path)
   if (!parent && parent !== '') return
   try {
-    await api.renameEntry(entry.path, joinPath(props.path, name))
+    // The entry's own folder, not the browsed one: the column view can
+    // have a selection sitting in an ancestor column.
+    await api.renameEntry(entry.path, joinPath(parent, name))
     await load()
   } catch (e) {
     error.value = String(e)
   }
 }
 
-async function newFolder() {
-  if (!props.path || insideArchive.value) return
+/** Creates the folder in `target`, defaulting to the browsed folder. */
+async function newFolder(target = props.path) {
+  if (!target || insideArchive.value) return
   const name = await promptText('New folder name:', 'New folder')
   if (!name) return
   try {
-    await api.createDir(joinPath(props.path, name))
+    await api.createDir(joinPath(target, name))
     await load()
   } catch (e) {
     error.value = String(e)
@@ -431,7 +485,7 @@ async function showShellMenu(paths: string[], anchor: { x: number; y: number }) 
 
 /** Checksums are only meaningful for files, so folders are never included. */
 function selectedFiles(): string[] {
-  const known = new Map(visibleEntries.value.map((e) => [e.path, e]))
+  const known = new Map(allEntries.value.map((e) => [e.path, e]))
   return selection.value.filter((p) => !known.get(p)?.isDir)
 }
 
@@ -625,7 +679,11 @@ function archiveMenu(entry: FileEntry): MenuItem[] {  const targets = selection.
   return items
 }
 
-async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
+/**
+ * The dir-level menu targets `dir` — the browsed folder, or, in the column
+ * view, whichever column's blank space was right-clicked.
+ */
+async function openContextMenu(event: MouseEvent, entry: FileEntry | null, dir: string = props.path) {
   // The clipboard may have been filled by Explorer since the last check.
   await clipboard.refresh()
   // Anchor the native menu where the click happened, not where the
@@ -748,14 +806,14 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
     : readOnly
       ? [
           {
-            label: splitArchive(props.path)?.inner ? 'Extract This Folder Here' : 'Extract All Here',
+            label: splitArchive(dir)?.inner ? 'Extract This Folder Here' : 'Extract All Here',
             icon: '📤',
-            action: () => extractHere([props.path]),
+            action: () => extractHere([dir]),
           },
           {
             label: 'Extract To…',
             icon: '📂',
-            action: () => extractToChosenFolder([props.path]),
+            action: () => extractToChosenFolder([dir]),
           },
           { separator: true },
           { label: 'Refresh', icon: '⟳', action: load },
@@ -770,9 +828,9 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
           label: 'Paste',
           icon: '📥',
           disabled: !clipboard.hasContent,
-          action: doPaste,
+          action: () => doPaste(dir),
         },
-        { label: 'New Folder', icon: '📁', action: newFolder },
+        { label: 'New Folder', icon: '📁', action: () => newFolder(dir) },
         { label: 'Refresh', icon: '⟳', action: load },
         { separator: true },
         {
@@ -787,22 +845,22 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
         },
         { separator: true },
         {
-          label: places.isFavorite(props.path) ? 'Remove Favorite' : 'Add to Favorites',
+          label: places.isFavorite(dir) ? 'Remove Favorite' : 'Add to Favorites',
           icon: '⭐',
-          action: () => places.toggleFavorite(props.path),
+          action: () => places.toggleFavorite(dir),
         },
         {
           label: 'Open in Explorer',
           icon: '🗂',
-          action: () => api.openEntryPath(props.path).catch(console.error),
+          action: () => api.openEntryPath(dir).catch(console.error),
         },
-        terminalMenu(props.path),
-        ...(hasVscode && props.path !== ROOT
+        terminalMenu(dir),
+        ...(hasVscode && dir !== ROOT
           ? [
               {
                 label: 'Open Folder with VS Code',
                 icon: '💻',
-                action: () => openInVscode([props.path], props.path),
+                action: () => openInVscode([dir], dir),
               },
             ]
           : []),
@@ -811,12 +869,12 @@ async function openContextMenu(event: MouseEvent, entry: FileEntry | null) {
           label: 'Add Folder to Archive…',
           icon: '📦',
           action: async () =>
-            openArchiveDialog([props.path], (await api.parentPath(props.path)) ?? props.path),
+            openArchiveDialog([dir], (await api.parentPath(dir)) ?? dir),
         },
         {
           label: 'More options',
           icon: '⋯',
-          action: () => showShellMenu([props.path], anchor),
+          action: () => showShellMenu([dir], anchor),
         },
       ]
 
@@ -832,7 +890,8 @@ defineExpose({
   copy: doCopy,
   cut: doCut,
   hash: () => openHashDialog(),
-  selectAll: () => listRef.value?.selectAll(),
+  selectAll: () =>
+    showList.value ? listRef.value?.selectAll() : columnRef.value?.selectAll(),
 })
 </script>
 
@@ -840,7 +899,7 @@ defineExpose({
   <div class="browser">
     <FastDial v-if="props.path === ROOT" @navigate="emit('navigate', $event)" />
     <FileList
-      v-else
+      v-else-if="showList"
       ref="listRef"
       :entries="visibleEntries"
       :current-path="props.path"
@@ -853,6 +912,18 @@ defineExpose({
       @context="openContextMenu"
       @selection-change="selection = $event"
       @move="moveDroppedEntries"
+    />
+    <ColumnView
+      v-else
+      ref="columnRef"
+      :path="props.path"
+      @open="open"
+      @navigate="emit('navigate', $event)"
+      @context="openContextMenu"
+      @selection-change="selection = $event"
+      @entries-change="columnEntries = $event"
+      @move="moveDroppedEntries"
+      @stats="emit('stats', $event)"
     />
     <ContextMenu
       :visible="ctx.visible"

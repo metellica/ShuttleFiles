@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { loadViewSettings, saveViewSettings } from '@/composables/useTauri'
-import type { ColumnWidths } from '@/types/filesystem'
+import type { ColumnWidths, ViewMode } from '@/types/filesystem'
 
 /**
  * Row scale for the file list.
@@ -96,6 +96,9 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
   // Until a divider is dragged the name column fills whatever is left, which
   // is the layout most people expect from a fresh window.
   const stretchName = ref(true)
+  // The details list stays the default so an upgrade changes nothing;
+  // switching to the column view is a deliberate act that is remembered.
+  const viewMode = ref<ViewMode>('list')
   // Saving before the stored value has arrived would overwrite it with the default.
   let loaded = false
 
@@ -106,6 +109,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
       splitRatio: splitRatio.value,
       columnWidths: { ...columnWidths.value },
       stretchName: stretchName.value,
+      viewMode: viewMode.value,
     }).catch((e) => console.error('Cannot save view settings:', e))
   }
 
@@ -121,6 +125,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
           splitRatio: splitRatio.value,
           columnWidths: { ...columnWidths.value },
           stretchName: stretchName.value,
+          viewMode: viewMode.value,
         })
         return
       }
@@ -129,6 +134,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
       splitRatio.value = clampRatio(settings.splitRatio)
       columnWidths.value = sanitizeWidths(settings.columnWidths)
       stretchName.value = settings.stretchName ?? true
+      viewMode.value = settings.viewMode === 'columns' ? 'columns' : 'list'
     } catch (e) {
       console.error('Cannot restore view settings:', e)
     } finally {
@@ -136,7 +142,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
     }
   }
 
-  watch([rowScale, splitRatio, stretchName], save)
+  watch([rowScale, splitRatio, stretchName, viewMode], save)
   watch(columnWidths, save, { deep: true })
 
   /** The preset the current scale corresponds to, if any. */
@@ -195,6 +201,7 @@ export const useViewSettingsStore = defineStore('viewSettings', () => {
     splitRatio,
     columnWidths,
     stretchName,
+    viewMode,
     activePreset,
     percent,
     restore,
