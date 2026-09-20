@@ -1505,7 +1505,7 @@ mod tests {
         std::fs::write(dst_dir.join("note.txt"), b"original").unwrap();
 
         let plans = vec![plan_for(&src_dir.join("note.txt"))];
-        run_transfer(&plans, &dst_dir, false, &Counter::default()).unwrap();
+        run_transfer(&plans, &dst_dir, false, false, &Counter::default()).unwrap();
 
         assert_eq!(std::fs::read(dst_dir.join("note.txt")).unwrap(), b"original");
         assert_eq!(std::fs::read(dst_dir.join("note (2).txt")).unwrap(), b"new");
@@ -1519,7 +1519,7 @@ mod tests {
         std::fs::create_dir_all(&dst_dir).unwrap();
 
         let counter = Counter::default();
-        run_transfer(&[plan_for(&tree)], &dst_dir, true, &counter).unwrap();
+        run_transfer(&[plan_for(&tree)], &dst_dir, true, false, &counter).unwrap();
 
         assert!(!tree.exists(), "source should be gone after a move");
         assert!(dst_dir.join("tree").join("sub").join("b.txt").exists());
@@ -1534,7 +1534,7 @@ mod tests {
         let tree = make_tree(tmp.path());
         let nested = tree.join("sub");
 
-        let err = run_transfer(&[plan_for(&tree)], &nested, false, &Counter::default())
+        let err = run_transfer(&[plan_for(&tree)], &nested, false, false, &Counter::default())
             .unwrap_err();
         assert!(matches!(err, AppError::InvalidPath(_)), "got {:?}", err);
         // And nothing was written before the check fired.
