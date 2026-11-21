@@ -151,7 +151,7 @@ async function onFavDrop(targetId: string) {
             </li>
           </ul>
           <div v-if="group.total > group.items.length" class="group-more">
-            +{{ group.total - group.items.length }} more — Ctrl+G to search
+            +{{ group.total - group.items.length }} more — Ctrl+P to search
           </div>
         </details>
       </div>

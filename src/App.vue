@@ -202,7 +202,7 @@ function onKeyDown(e: KeyboardEvent) {
     tabs.focusOtherPane()
     return
   }
-  if (mod && e.key.toLowerCase() === 'g') {
+  if (mod && e.key.toLowerCase() === 'p') {
     e.preventDefault()
     quickJumpOpen.value = true
     return

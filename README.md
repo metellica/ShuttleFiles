@@ -27,7 +27,7 @@ work. Remaining: remote shares (R4).
   one-week half-life, so a folder that was busy ten days ago fades by itself.
   Pin (📌) a folder to exempt it from fading; history is capped per machine
   so one busy server cannot crowd out the others
-- ⚡ **Quick jump** — `Ctrl+G` searches the history and favorites of every
+- ⚡ **Quick jump** — `Ctrl+P` searches the history and favorites of every
   machine at once; `@nas docs` narrows to machines matching "nas" (`@local`
   for this PC), Enter opens, `Ctrl+Enter` opens in a new tab
 - ⭐ **Favorites** — star the current folder from the toolbar or any folder from
@@ -301,7 +301,7 @@ drives and renders as the fast dial.
 | `Alt+←` / `Alt+→` / `Alt+↑` | Back / Forward / Up |
 | `Backspace` | Up one folder |
 | `Ctrl+L` | Edit address bar |
-| `Ctrl+G` | Quick jump to a recent / favorite folder on any machine |
+| `Ctrl+P` | Quick jump to a recent / favorite folder on any machine |
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / find in folder and below (`*.txt` wildcards supported) |
 | `F5` | Refresh |
 | `Ctrl+A` | Select all |
