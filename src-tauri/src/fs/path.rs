@@ -77,6 +77,20 @@ pub fn is_unc(path: &str) -> bool {
     path.starts_with("\\\\") || path.starts_with("//")
 }
 
+/// The machine a path lives on: `\\server` for UNC paths, empty for
+/// anything local. Lower-cased so `\\NAS` and `\\nas` group together.
+pub fn host_of(path: &str) -> String {
+    if !is_unc(path) {
+        return String::new();
+    }
+    let rest = path.trim_start_matches(['\\', '/']);
+    let server = rest.split(['\\', '/']).next().unwrap_or("");
+    if server.is_empty() {
+        return String::new();
+    }
+    format!("\\\\{}", server.to_lowercase())
+}
+
 /// Parent directory, or `None` when already at the top of the tree.
 /// Drive roots return the virtual root so navigation reaches "This PC".
 pub fn parent_of(path: &str) -> Option<String> {

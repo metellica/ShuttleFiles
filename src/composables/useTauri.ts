@@ -111,7 +111,12 @@ export const listRecent = () => invoke<RecentEntry[]>('list_recent')
 
 export const recordVisit = (path: string) => invoke<void>('record_visit', { path })
 
-export const clearRecent = () => invoke<void>('clear_recent')
+export const clearRecent = () => invoke<RecentEntry[]>('clear_recent')
+
+export const togglePinRecent = (path: string) =>
+  invoke<RecentEntry[]>('toggle_pin_recent', { path })
+
+export const removeRecent = (path: string) => invoke<RecentEntry[]>('remove_recent', { path })
 
 // --- Persisted UI state (~/.config/shuttle-files/) ---------------------------
 

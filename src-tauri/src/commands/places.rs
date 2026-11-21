@@ -72,6 +72,16 @@ pub fn record_visit(path: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn clear_recent() -> AppResult<()> {
+pub fn clear_recent() -> AppResult<Vec<RecentEntry>> {
     favorites::clear_recent()
+}
+
+#[tauri::command]
+pub fn toggle_pin_recent(path: String) -> AppResult<Vec<RecentEntry>> {
+    favorites::toggle_pin(&path)
+}
+
+#[tauri::command]
+pub fn remove_recent(path: String) -> AppResult<Vec<RecentEntry>> {
+    favorites::remove_recent(&path)
 }

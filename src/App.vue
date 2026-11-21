@@ -19,6 +19,7 @@ import FileBrowser from '@/components/browser/FileBrowser.vue'
 import TerminalPanel from '@/components/terminal/TerminalPanel.vue'
 import PromptDialog from '@/components/common/PromptDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
+import QuickJump from '@/components/common/QuickJump.vue'
 
 type Browser = InstanceType<typeof FileBrowser>
 interface PaneStats {
@@ -45,6 +46,13 @@ const upTarget = ref<string | null>(null)
 const toolbarRef = ref<InstanceType<typeof Toolbar> | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
 const settingsOpen = ref(false)
+const quickJumpOpen = ref(false)
+
+function quickJump(path: string, inNewTab: boolean) {
+  quickJumpOpen.value = false
+  if (inNewTab) newTab(path)
+  else navigate(path)
+}
 const terminalsList = ref<TerminalEntry[]>([])
 listTerminals().then((t) => (terminalsList.value = t)).catch(() => {})
 
@@ -192,6 +200,11 @@ function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'F6') {
     e.preventDefault()
     tabs.focusOtherPane()
+    return
+  }
+  if (mod && e.key.toLowerCase() === 'g') {
+    e.preventDefault()
+    quickJumpOpen.value = true
     return
   }
   if (mod && e.key.toLowerCase() === 'l') {
@@ -401,6 +414,7 @@ onUnmounted(() => {
     </footer>
 
     <PromptDialog />
+    <QuickJump :open="quickJumpOpen" @close="quickJumpOpen = false" @go="quickJump" />
     <SettingsDialog v-if="settingsOpen" @close="settingsOpen = false" />
   </div>
 </template>

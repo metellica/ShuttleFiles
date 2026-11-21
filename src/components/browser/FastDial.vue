@@ -2,11 +2,21 @@
 import { onMounted, ref } from 'vue'
 import { usePlacesStore } from '@/stores/places'
 import { driveIcon, formatSize } from '@/composables/useFormat'
+import type { RecentEntry } from '@/types/filesystem'
 
 const emit = defineEmits<{ navigate: [path: string] }>()
 const places = usePlacesStore()
 
 const dragId = ref<string | null>(null)
+
+/** The part of a path below its machine, which the group header already names. */
+function relativePath(item: RecentEntry): string {
+  return item.host ? item.path.slice(item.host.length).replace(/^[\\/]+/, '') : item.path
+}
+
+function idleDays(lastVisit: number): number {
+  return Math.floor((Date.now() / 1000 - lastVisit) / 86_400)
+}
 
 onMounted(() => {
   places.refresh().catch((e) => console.error('Cannot load places:', e))
@@ -102,23 +112,48 @@ async function onFavDrop(targetId: string) {
       </div>
     </section>
 
-    <section v-if="places.frequent.length">
+    <section v-if="places.recentGroups.length">
       <h2>
-        Frequent
+        Recent by machine <small>pin keeps a folder; the rest fades after a week or so</small>
         <button class="link" @click="places.clearRecent()">clear</button>
       </h2>
-      <div class="grid">
-        <button
-          v-for="item in places.frequent"
-          :key="item.path"
-          class="tile"
-          :title="item.path"
-          @click="emit('navigate', item.path)"
+      <div class="groups">
+        <details
+          v-for="group in places.recentGroups"
+          :key="group.host"
+          class="group"
+          :open="!group.dormant"
         >
-          <span class="tile-icon">🕘</span>
-          <span class="tile-label">{{ item.name }}</span>
-          <span class="tile-sub">{{ item.visits }} visits</span>
-        </button>
+          <summary>
+            <span class="group-name">{{ group.host ? '🖧' : '💻' }} {{ group.label }}</span>
+            <span class="group-sub">
+              <template v-if="group.dormant">idle {{ idleDays(group.lastVisit) }} days · </template>
+              {{ group.total }} folder{{ group.total === 1 ? '' : 's' }}
+            </span>
+          </summary>
+          <ul>
+            <li v-for="item in group.items" :key="item.path" class="row" :title="item.path">
+              <button class="row-main" @click="emit('navigate', item.path)">
+                <span class="row-name">{{ item.name }}</span>
+                <span class="row-path">{{ relativePath(item) }}</span>
+              </button>
+              <button
+                class="row-btn"
+                :class="{ on: item.pinned }"
+                title="Pin"
+                @click="places.togglePin(item.path)"
+              >
+                📌
+              </button>
+              <button class="row-btn" title="Forget" @click="places.removeRecent(item.path)">
+                ×
+              </button>
+            </li>
+          </ul>
+          <div v-if="group.total > group.items.length" class="group-more">
+            +{{ group.total - group.items.length }} more — Ctrl+G to search
+          </div>
+        </details>
       </div>
     </section>
   </div>
@@ -173,6 +208,129 @@ h2 small {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
   gap: 10px;
+}
+
+.groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
+.group {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 4px 6px;
+}
+
+.group summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.group summary::-webkit-details-marker {
+  display: none;
+}
+
+.group:not([open]) summary {
+  padding-bottom: 2px;
+  opacity: 0.7;
+}
+
+.group-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-sub,
+.group-more {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.group-more {
+  padding: 4px 8px 0;
+}
+
+.group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.row:hover {
+  background: var(--bg-hover);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  text-align: left;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.row-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-path {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 5px;
+  opacity: 0;
+  filter: grayscale(1);
+}
+
+.row:hover .row-btn,
+.row-btn.on {
+  opacity: 1;
+}
+
+.row-btn.on {
+  filter: none;
+}
+
+.row-btn:hover {
+  color: var(--error);
 }
 
 .tile {

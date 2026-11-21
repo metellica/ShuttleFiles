@@ -3,6 +3,20 @@ import { computed, ref } from 'vue'
 import * as api from '@/composables/useTauri'
 import type { DriveInfo, Favorite, PlaceEntry, RecentEntry } from '@/types/filesystem'
 
+/** Folders shown per machine on the fast dial. */
+const GROUP_PREVIEW = 6
+/** A remote untouched this long is folded away on the fast dial. */
+const DORMANT_SECS = 14 * 86_400
+
+export interface RecentGroup {
+  host: string
+  label: string
+  items: RecentEntry[]
+  total: number
+  lastVisit: number
+  dormant: boolean
+}
+
 /** Drives, well-known folders, favorites and history — the fast dial's data. */
 export const usePlacesStore = defineStore('places', () => {
   const drives = ref<DriveInfo[]>([])
@@ -10,13 +24,50 @@ export const usePlacesStore = defineStore('places', () => {
   const favorites = ref<Favorite[]>([])
   const recent = ref<RecentEntry[]>([])
 
-  /** Most-visited folders, the fast dial's third row. */
-  const frequent = computed(() =>
-    [...recent.value].sort((a, b) => b.visits - a.visits).slice(0, 12)
-  )
+  /**
+   * History grouped by machine, the fast dial's "Recent" cards. Local
+   * first, then remotes by how recently any of their folders was used.
+   */
+  const recentGroups = computed<RecentGroup[]>(() => {
+    const byHost = new Map<string, RecentEntry[]>()
+    for (const entry of recent.value) {
+      const list = byHost.get(entry.host)
+      if (list) list.push(entry)
+      else byHost.set(entry.host, [entry])
+    }
+    const now = Date.now() / 1000
+    const groups = [...byHost.entries()].map(([host, entries]) => {
+      const lastVisit = Math.max(...entries.map((e) => e.lastVisit))
+      return {
+        host,
+        label: host || 'Local',
+        // `recent` arrives ranked, so the head is already the best.
+        items: entries.slice(0, GROUP_PREVIEW),
+        total: entries.length,
+        lastVisit,
+        dormant: host !== '' && now - lastVisit > DORMANT_SECS,
+      }
+    })
+    return groups.sort((a, b) => {
+      if (!a.host !== !b.host) return a.host ? 1 : -1
+      return b.lastVisit - a.lastVisit
+    })
+  })
 
   function isFavorite(path: string) {
     return favorites.value.some((f) => f.path === path)
+  }
+
+  async function refreshRecent() {
+    recent.value = await api.listRecent()
+  }
+
+  async function togglePin(path: string) {
+    recent.value = await api.togglePinRecent(path)
+  }
+
+  async function removeRecent(path: string) {
+    recent.value = await api.removeRecent(path)
   }
 
   async function refresh() {
@@ -48,8 +99,7 @@ export const usePlacesStore = defineStore('places', () => {
   }
 
   async function clearRecent() {
-    await api.clearRecent()
-    recent.value = []
+    recent.value = await api.clearRecent()
   }
 
   return {
@@ -57,9 +107,12 @@ export const usePlacesStore = defineStore('places', () => {
     quickAccess,
     favorites,
     recent,
-    frequent,
+    recentGroups,
     isFavorite,
     refresh,
+    refreshRecent,
+    togglePin,
+    removeRecent,
     toggleFavorite,
     remove,
     reorder,

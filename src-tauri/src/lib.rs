@@ -59,6 +59,8 @@ pub fn run() {
             commands::places::list_recent,
             commands::places::record_visit,
             commands::places::clear_recent,
+            commands::places::toggle_pin_recent,
+            commands::places::remove_recent,
             commands::session::load_tabs,
             commands::session::save_tabs,
             commands::session::load_view_settings,

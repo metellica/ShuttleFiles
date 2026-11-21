@@ -21,7 +21,15 @@ work. Remaining: remote shares (R4).
   short way to move a file; the toolbar and status line follow whichever side
   has the focus, and closing a side folds its tabs into the one that stays
 - 🎯 **Fast Dial** — a new tab opens a dial page with drives (capacity bars),
-  quick-access folders, favorites (drag to reorder) and most-visited folders
+  quick-access folders, favorites (drag to reorder) and recent folders grouped
+  per machine (`\\server`); machines idle for two weeks fold away
+- 🕘 **Frecency history** — recent folders are ranked by visits weighted with a
+  one-week half-life, so a folder that was busy ten days ago fades by itself.
+  Pin (📌) a folder to exempt it from fading; history is capped per machine
+  so one busy server cannot crowd out the others
+- ⚡ **Quick jump** — `Ctrl+G` searches the history and favorites of every
+  machine at once; `@nas docs` narrows to machines matching "nas" (`@local`
+  for this PC), Enter opens, `Ctrl+Enter` opens in a new tab
 - ⭐ **Favorites** — star the current folder from the toolbar or any folder from
   its context menu; stored as plain JSON
 - 🧭 **Address bar** — clickable breadcrumbs, click-to-edit, Copy path,
@@ -293,6 +301,7 @@ drives and renders as the fast dial.
 | `Alt+←` / `Alt+→` / `Alt+↑` | Back / Forward / Up |
 | `Backspace` | Up one folder |
 | `Ctrl+L` | Edit address bar |
+| `Ctrl+G` | Quick jump to a recent / favorite folder on any machine |
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / find in folder and below (`*.txt` wildcards supported) |
 | `F5` | Refresh |
 | `Ctrl+A` | Select all |
@@ -309,7 +318,7 @@ Plain JSON under `~/.config/shuttle-files/`, matching the ShuttleSFTP convention
 | File | Contents |
 |------|----------|
 | `favorites.json` | Starred folders shown on the fast dial |
-| `recent.json` | Visit history (capped at 200) driving "Frequent" |
+| `recent.json` | Visit history (up to 500, 80 per machine) ranked by frecency; pinned entries are kept |
 | `tabs.json` | Open tabs, restored on the next start — including which side of a split each was on |
 | `view.json` | Row size and the split position |
 | `open-with.json` | Program used for text files, and which extensions count as text |

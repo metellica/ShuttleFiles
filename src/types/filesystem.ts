@@ -47,6 +47,11 @@ export interface RecentEntry {
   name: string
   visits: number
   lastVisit: number
+  pinned: boolean
+  /** `\\server` for network paths, empty for local ones. */
+  host: string
+  /** Frecency: visits weighted by recency. */
+  score: number
 }
 
 /** The virtual root ("This PC"), which renders as the fast dial. */
