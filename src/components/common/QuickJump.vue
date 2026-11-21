@@ -92,6 +92,21 @@ function accept(index: number, newTab: boolean) {
   if (hit) emit('go', hit.path, newTab)
 }
 
+async function removeAt(index: number) {
+  const hit = results.value[index]
+  if (!hit || hit.pinned) return
+  await places.removeRecent(hit.path).catch(() => {})
+  const n = results.value.length
+  if (selected.value >= n) selected.value = Math.max(0, n - 1)
+}
+
+function onDelete(e: KeyboardEvent) {
+  // Plain Delete edits text; Ctrl+Delete always removes the selected entry.
+  if (query.value && !e.ctrlKey) return
+  e.preventDefault()
+  removeAt(selected.value)
+}
+
 function relative(c: Candidate): string {
   return c.host ? c.path.slice(c.host.length).replace(/^[\\/]+/, '') : c.path
 }
@@ -108,6 +123,7 @@ function relative(c: Candidate): string {
         @keydown.down.prevent="move(1)"
         @keydown.up.prevent="move(-1)"
         @keydown.enter.prevent="accept(selected, $event.ctrlKey || $event.metaKey)"
+        @keydown.delete="onDelete"
       />
       <ul v-if="results.length" ref="listRef">
         <li
@@ -121,6 +137,12 @@ function relative(c: Candidate): string {
           <span class="name">{{ c.pinned ? '📌 ' : '' }}{{ c.name }}</span>
           <span class="host">{{ c.host || 'local' }}</span>
           <span class="path">{{ relative(c) }}</span>
+          <button
+            v-if="!c.pinned"
+            class="del"
+            title="Remove from history (Ctrl+Delete)"
+            @click.stop="removeAt(i)"
+          >×</button>
         </li>
       </ul>
       <div v-else class="empty">No matching folders in your history</div>
@@ -170,6 +192,7 @@ ul {
 }
 
 li {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas: 'name host' 'path path';
@@ -205,6 +228,30 @@ li.active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.del {
+  position: absolute;
+  right: 6px;
+  bottom: 3px;
+  display: none;
+  background: var(--bg-panel);
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 1px 6px;
+}
+
+li:hover .del,
+li.active .del {
+  display: block;
+}
+
+.del:hover {
+  color: var(--error);
 }
 
 .empty {

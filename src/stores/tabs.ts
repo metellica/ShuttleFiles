@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { ROOT, type TabSnapshot } from '@/types/filesystem'
-import { loadTabs, recordVisit, saveTabs } from '@/composables/useTauri'
+import { listDir, loadTabs, recordVisit, saveTabs } from '@/composables/useTauri'
 import { isInsideArchive, splitArchive } from '@/stores/archives'
 
 /**
@@ -399,9 +399,12 @@ export const useTabsStore = defineStore('tabs', () => {
     // Paths inside an archive are not places on disk, so they stay out
     // of the visit history the fast dial ranks.
     if (path !== ROOT && !isInsideArchive(path)) {
-      recordVisit(path).catch(() => {
-        // History is a convenience; a failed write must not break navigation.
-      })
+      // Only folders that can actually be listed are worth remembering.
+      listDir(path)
+        .then(() => recordVisit(path))
+        .catch(() => {
+          // History is a convenience; invalid paths and failed writes are ignored.
+        })
     }
   }
 
