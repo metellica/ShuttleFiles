@@ -14,6 +14,10 @@ work. Remaining: remote shares (R4).
 
 - 🗂 **Multi-tab** — per-tab Back/Forward history, drag to reorder, middle-click
   to close, duplicate/close-others context menu, tabs restored on restart
+- 🔒 **Tab locks** (Total Commander style) — *Locked* pins a tab to its folder
+  and opens anywhere else in a new tab; *Locked, directory changes allowed*
+  lets it wander and double-clicking the tab returns to the base folder.
+  Locked tabs resist middle-click and survive "close other tabs"
 - ◫ **Vertical split** — `Ctrl+\` puts two panes side by side, each with its own
   tabs, history and filter; `F6` alternates sides, the divider drags (double
   click evens it out), a tab moves across from its context menu, and both sides
@@ -34,8 +38,16 @@ work. Remaining: remote shares (R4).
   its context menu; stored as plain JSON
 - 🧭 **Address bar** — clickable breadcrumbs, click-to-edit, Copy path,
   Paste & Go, `%ENV%` / `~` expansion, `/` → `\` normalisation, UNC input
-- 📋 **Details view** — sortable Name / Size / Type / Modified, Ctrl+click and
-  Shift+click multi-select, hidden files dimmed, live filter box
+- 📋 **Details view** — sortable Name / Size / Type / Modified with resizable
+  columns, Ctrl+click and Shift+click multi-select, hidden files dimmed, live
+  filter box
+- ⫼ **Column view** — Finder-style Miller columns, toggled from the toolbar
+  and remembered; an active filter falls back to the details view until it is
+  cleared
+- 🖐 **Drag to move** — drag a selection onto a folder (or the empty space of
+  the current one) to move it, in either view; hovering a folder while
+  dragging opens it. Dragging to or from Explorer is not supported — use the
+  clipboard
 - 🔎 **Fuzzy finder** — `Ctrl+F` filters the current folder, `Ctrl+Shift+F`
   descends the whole tree with the same query and ranking; fzy-style scoring
   with match highlighting, every whitespace-separated term must match, smart
@@ -53,8 +65,9 @@ work. Remaining: remote shares (R4).
   status panel; browsing, opening tabs and starting more jobs stay responsive
 - 🚀 **Tuned for large trees** — parallel scan, a bounded worker pool and
   kernel-side `CopyFile2`; see [Performance](#performance) for measurements
-- ✂️ **File operations** — Rename, Delete (with confirmation), New Folder,
-  collision-safe `name (2)` destinations, same-volume moves via rename
+- ✂️ **File operations** — Rename, Delete (permanent, not to the Recycle Bin,
+  with confirmation), New Folder, collision-safe `name (2)` destinations,
+  same-volume moves via rename
 - 🔗 **Links preserved** — a junction or directory symlink is recreated at the
   destination pointing at the same target instead of duplicating what it shares,
   and delete unlinks it without touching the target
@@ -82,12 +95,23 @@ work. Remaining: remote shares (R4).
   an archive is the one case that touches disk: it is extracted to
   `%TEMP%\ShuttleFiles\<uuid>\` for the viewer, and folders older than a day are
   swept at the next start
+- #️⃣ **Checksums** — MD5, SHA-256 or both for the selected files
+  (`Ctrl+Shift+H` or the context menu), streamed in one pass with progress and
+  cancel
+- 🖥 **Integrated terminal** — "Open Terminal" (toolbar or context menu) opens
+  an embedded xterm drawer in the current folder; the shell is picked from
+  what is installed: Command Prompt, PowerShell, Visual Studio developer
+  shells and Git Bash. Each browser tab keeps its own terminals, which close
+  with it
+- 🌓 **Light / dark theme** — toggled from the toolbar
 
 ## Not implemented yet
 
 | Requirement | Plan |
 |---|---|
 | Remote shares (R4) | `WNetAddConnection2W` for credentials, `NetShareEnum` to list shares. UNC paths already parse and browse today |
+| New file | Only New Folder exists |
+| Properties dialog | — |
 
 ## Tech Stack
 
@@ -140,7 +164,7 @@ integration that has no equivalent elsewhere.
 ```bash
 npm run type-check                 # vue-tsc
 npm run build-only                 # vite build
-cd src-tauri && cargo test         # path model, clipboard, ops engine, archives, IPC, shell menu
+cd src-tauri && cargo test         # path model, clipboard, ops engine, archives, search, hashing, open-with, IPC, shell menu
 
 # Benchmarks (write hundreds of MB, excluded from the normal run)
 cd src-tauri && cargo test --release bench_ -- --ignored --nocapture
@@ -159,11 +183,12 @@ whatever extensions are installed — both without a GUI.
 ShuttleFiles/
 ├── src/                       # Vue 3 frontend
 │   ├── components/
-│   │   ├── browser/           # FileBrowser, FileList, FastDial, PathBar
-│   │   ├── common/            # ContextMenu, PromptDialog, HashDialog, SettingsDialog, ArchiveDialog
-│   │   └── layout/            # TabBar, Toolbar, OperationBar, DensityControl
-│   ├── composables/           # Tauri IPC wrappers, formatting, prompt, search, name matching
-│   ├── stores/                # Pinia state (tabs, clipboard, places, operations, view, archives)
+│   │   ├── browser/           # FileBrowser, FileList, ColumnView, FastDial, PathBar
+│   │   ├── common/            # ContextMenu, PromptDialog, HashDialog, SettingsDialog, ArchiveDialog, QuickJump
+│   │   ├── layout/            # TabBar, Toolbar, OperationBar, DensityControl
+│   │   └── terminal/          # TerminalPanel, TerminalView (xterm.js)
+│   ├── composables/           # Tauri IPC wrappers, formatting, prompt, search, name matching, overwrite prompts
+│   ├── stores/                # Pinia state (tabs, clipboard, places, operations, view, archives, openWith, terminals, theme)
 │   └── types/                 # TypeScript interfaces
 ├── src-tauri/                 # Rust backend
 │   ├── app-icon.svg           # Icon source; regenerate with `npx tauri icon`
@@ -172,8 +197,10 @@ ShuttleFiles/
 │   │   ├── archive/           # zip / 7z / tar backends: list, extract, create
 │   │   ├── fs/                # path model, listing, drives, fuzzy/wildcard search, hashing
 │   │   ├── ops/               # background job registry + copy/move/delete engine
-│   │   ├── config/            # JSON store, favorites & history
-│   │   ├── shell/             # native Win32 integration (clipboard, menu bridge)
+│   │   ├── config/            # JSON store: favorites & history, tabs & view, open-with
+│   │   ├── shell/             # native Win32 integration (clipboard, menu bridge, launching, VS Code, terminal detection)
+│   │   ├── terminal/          # embedded PTY sessions (portable-pty)
+│   │   ├── cancel.rs          # cancellation tokens for search and hashing
 │   │   └── commands/          # Tauri IPC command handlers
 │   └── tests/                 # Integration tests (Tauri mock runtime, shell menu)
 ├── scripts/stage-helper.mjs   # Stages shellmenu.exe for bundling
@@ -303,12 +330,14 @@ drives and renders as the fast dial.
 | `Ctrl+L` | Edit address bar |
 | `Ctrl+P` | Quick jump to a recent / favorite folder on any machine |
 | `Ctrl+F` / `Ctrl+Shift+F` | Filter this folder / find in folder and below (`*.txt` wildcards supported) |
+| `Esc` | Clear the filter |
 | `F5` | Refresh |
 | `Ctrl+A` | Select all |
 | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / Cut / Paste (system clipboard — works with Explorer) |
 | `F2` | Rename |
 | `Delete` | Delete |
 | `Ctrl+Shift+N` | New folder |
+| `Ctrl+Shift+H` | Checksums of the selected files |
 | `Ctrl+wheel` / `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Row size: zoom in / out / reset |
 
 ## Configuration
@@ -319,9 +348,12 @@ Plain JSON under `~/.config/shuttle-files/`, matching the ShuttleSFTP convention
 |------|----------|
 | `favorites.json` | Starred folders shown on the fast dial |
 | `recent.json` | Visit history (up to 500, 80 per machine) ranked by frecency; pinned entries are kept |
-| `tabs.json` | Open tabs, restored on the next start — including which side of a split each was on |
-| `view.json` | Row size and the split position |
+| `tabs.json` | Open tabs and their lock state, restored on the next start — including which side of a split each was on |
+| `view.json` | Row size, split position, column widths, whether the Name column stretches, and details / column view |
 | `open-with.json` | Program used for text files, and which extensions count as text |
+
+The light / dark theme is the one setting kept in the WebView's
+`localStorage` (`shuttle-files:theme`).
 
 ## License
 
